@@ -1,0 +1,170 @@
+# ===============================
+# IDEs and Editors
+# ===============================
+
+### IntelliJ ###
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+.idea_modules/
+.idea/**/workspace.xml
+.idea/**/tasks.xml
+.idea/**/usage.statistics.xml
+.idea/**/shelf
+.idea/**/dataSources/
+.idea/**/sqlDataSources.xml
+.idea/**/dynamic.xml
+.idea/**/uiDesigner.xml
+.idea/**/gradle.xml
+.idea/**/libraries
+.idea/caches/
+.idea/httpRequests
+com_crashlytics_export_strings.xml
+crashlytics.properties
+fabric.properties
+!.idea/codeStyles
+!.idea/runConfigurations
+
+### VS Code ###
+.vscode/
+.history/
+*.vsix
+.ionide
+
+### Sublime Text ###
+*.sublime-workspace
+sftp-config.json
+Package Control.last-run
+Package Control.cache/
+GitHub.sublime-settings
+
+### Vim ###
+[._]*.s[a-v][a-z]
+[._]*.sw[a-p]
+Session.vim
+.netrwhist
+tags
+[._]*.un~
+
+### Emacs ###
+*~
+\#*\#
+*.elc
+.elpa/
+auto-save-list
+.projectile
+.dir-locals.el
+
+# ===============================
+# Operating Systems
+# ===============================
+
+### macOS ###
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+Icon
+.apdisk
+
+### Linux ###
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+### Windows ###
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.lnk
+*.stackdump
+
+# ===============================
+# Build Tools and Languages
+# ===============================
+
+### Java ###
+*.class
+*.log
+*.ctxt
+.mtj.tmp/
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+hs_err_pid*
+replay_pid*
+
+### Scala / SBT ###
+dist/
+target/
+lib_managed/
+src_managed/
+project/boot/
+project/target/
+project/plugins/
+.history
+.cache
+.lib/
+.bsp/
+.scala_dependencies
+.ensime
+.ensime_cache/
+
+### Spark ###
+checkpoint/
+logs/
+work/
+metastore_db/
+derby.log
+spark-warehouse/
+warehouse/
+python/lib/pyspark.zip
+python/deps
+python/test_coverage/
+R/pkg/vignettes/sparkr-vignettes.html
+dependency-reduced-pom.xml
+scalastyle-output.xml
+spark-tests.log
+conf/*.conf
+conf/*.properties
+
+# ===============================
+# Temporary and Generated Files
+# ===============================
+
+*.swp
+*.swo
+*~
+*.tmp
+*.bak
+*.orig
+*.rej
+
+# Logs and reports
+*.pid
+*.seed
+*.out
+reports/
+unit-tests.log
+
+# Local databases
+*.db
+*.sqlite
+TempStatsStore/
+
+# Environment files
+.env
+.env.local
+.env.*.local
