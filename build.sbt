@@ -42,11 +42,11 @@ lazy val flink = (project in file("flink"))
     crossScalaVersions := Seq("2.12.18", "2.13.14"),
     flinkVersion       := sys.props.getOrElse("flink.version", "2.2.0"),
     libraryDependencies ++= Seq(
-      "org.apache.flink" %% "flink-table-api-scala-bridge" % flinkVersion.value % Provided,
-      "org.scalatest"    %% "scalatest"                    % "3.2.17"           % Test
+      "org.apache.flink" % "flink-streaming-java" % flinkVersion.value % Provided,
+      "org.apache.flink" % "flink-table-api-java"  % flinkVersion.value % Provided
     )
   )
 
 lazy val root = (project in file("."))
-  .aggregate(core, spark/*, flink*/)
+  .aggregate(core, spark, flink)
   .settings(publish / skip := true)
