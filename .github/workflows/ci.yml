@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Core — both Scala versions
+          - module: core
+            scala: '2.12.18'
+          - module: core
+            scala: '2.13.14'
+
+          # Spark — default version from build.sbt
+          - module: spark
+            scala: '2.13.14'
+
+          # Flink — compile only (no test infra yet)
+          - module: flink
+            scala: '2.13.14'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'corretto'
+          cache: 'sbt'
+
+      - name: Compile ${{ matrix.module }} (Scala ${{ matrix.scala }})
+        run: sbt ++${{ matrix.scala }} ${{ matrix.module }}/compile
+
+      - name: Test ${{ matrix.module }} (Scala ${{ matrix.scala }})
+        if: matrix.module != 'flink'
+        run: sbt ++${{ matrix.scala }} ${{ matrix.module }}/test
+
+  publish-snapshot:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'corretto'
+          cache: 'sbt'
+
+      - uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Publish snapshots
+        env:
+          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+        run: |
+          sbt ++2.12.18 core/publishSigned
+          sbt ++2.13.14 core/publishSigned spark/publishSigned flink/publishSigned
+          sbt sonatypeBundleRelease
+
+  publish-release:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'corretto'
+          cache: 'sbt'
+
+      - uses: crazy-max/ghaction-import-gpg@v6
+        with:
+          gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
+          passphrase: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Publish release
+        env:
+          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+        run: |
+          sbt ++2.12.18 core/publishSigned
+          sbt ++2.13.14 core/publishSigned spark/publishSigned flink/publishSigned
+          sbt sonatypeBundleRelease
