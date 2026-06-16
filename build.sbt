@@ -1,15 +1,15 @@
-ThisBuild / organization := "io.galileostudio"
+ThisBuild / organization := "io.galileostd"
 ThisBuild / version      := "0.1.0-SNAPSHOT"
 
 lazy val core = (project in file("core"))
   .settings(
-    name                := "sumeh-core",
-    scalaVersion        := "2.13.14",
-    crossScalaVersions  := Seq("2.12.18", "2.13.14"),
+    name               := "sumeh-dq-core",
+    scalaVersion       := "2.13.14",
+    crossScalaVersions := Seq("2.12.18", "2.13.14"),
     libraryDependencies ++= Seq(
-      "com.lihaoyi" %% "upickle"       % "3.1.0",
-      "org.slf4j"    % "slf4j-api"     % "2.0.9",
-      "org.scalatest" %% "scalatest"   % "3.2.17" % Test
+      "com.lihaoyi"   %% "upickle"   % "3.1.0",
+      "org.slf4j"      % "slf4j-api" % "2.0.9",
+      "org.scalatest" %% "scalatest" % "3.2.17" % Test
     )
   )
 
@@ -18,7 +18,7 @@ lazy val sparkVersion = settingKey[String]("Spark version")
 lazy val spark = (project in file("spark"))
   .dependsOn(core)
   .settings(
-    name         := "sumeh-spark",
+    name         := "sumeh-dq-spark",
     scalaVersion := "2.13.14",
     sparkVersion := sys.props.getOrElse("spark.version", "4.1.2"),
     crossScalaVersions := {
@@ -37,16 +37,20 @@ lazy val flinkVersion = settingKey[String]("Flink version")
 lazy val flink = (project in file("flink"))
   .dependsOn(core)
   .settings(
-    name               := "sumeh-flink",
+    name               := "sumeh-dq-flink",
     scalaVersion       := "2.13.14",
     crossScalaVersions := Seq("2.12.18", "2.13.14"),
     flinkVersion       := sys.props.getOrElse("flink.version", "2.2.0"),
     libraryDependencies ++= Seq(
       "org.apache.flink" % "flink-streaming-java" % flinkVersion.value % Provided,
-      "org.apache.flink" % "flink-table-api-java"  % flinkVersion.value % Provided
+      "org.apache.flink" % "flink-table-api-java"  % flinkVersion.value % Provided,
+      "org.scalatest"   %% "scalatest"             % "3.2.17"           % Test
     )
   )
 
 lazy val root = (project in file("."))
   .aggregate(core, spark, flink)
-  .settings(publish / skip := true)
+  .settings(
+    name           := "sumeh-dq",
+    publish / skip := true
+  )
