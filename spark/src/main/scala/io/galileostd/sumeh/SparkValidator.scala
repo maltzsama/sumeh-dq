@@ -226,12 +226,12 @@ object SparkValidator {
     case Some(io.galileostd.sumeh.rule.StringValue(s)) => s
     case Some(io.galileostd.sumeh.rule.LongValue(l))   => l
     case Some(io.galileostd.sumeh.rule.DoubleValue(d)) => d
-    case _                                                => null
+    case _                                             => null
   }
 
   private def listValues(v: Option[io.galileostd.sumeh.rule.RuleValue]): Seq[Any] = v match {
     case Some(io.galileostd.sumeh.rule.ListValue(items)) => items.map(v => ruleValueToAny(Some(v)))
-    case _                                                  => Seq.empty
+    case _                                               => Seq.empty
   }
 
   private def skippedResult(rule: RuleDefinition, level: ValidationLevel, reason: String) =

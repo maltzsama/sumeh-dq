@@ -44,7 +44,8 @@ lazy val flink = (project in file("flink"))
     libraryDependencies ++= Seq(
       "org.apache.flink" % "flink-streaming-java" % flinkVersion.value % Provided,
       "org.apache.flink" % "flink-table-api-java"  % flinkVersion.value % Provided,
-      "org.scalatest"   %% "scalatest"             % "3.2.17"           % Test
+      "org.apache.flink" % "flink-table-api-java-bridge" % flinkVersion.value % Provided,
+      "org.scalatest"   %% "scalatest"            % "3.2.17" % Test
     )
   )
 
