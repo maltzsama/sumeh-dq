@@ -1,6 +1,5 @@
 package io.galileostd.sumeh.validation
 
-import io.galileostd.sumeh.rule.{RuleDefinition, StringValue}
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 

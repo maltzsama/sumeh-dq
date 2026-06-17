@@ -58,12 +58,15 @@ object SparkRegistry {
     "is_on_saturday"  -> (DateAnalyzer, GenericConstraint),
     "is_on_sunday"    -> (DateAnalyzer, GenericConstraint),
     // Aggregation (TABLE)
-    "has_min"         -> (AggregationAnalyzer, AggregationConstraint),
-    "has_max"         -> (AggregationAnalyzer, AggregationConstraint),
-    "has_sum"         -> (AggregationAnalyzer, AggregationConstraint),
-    "has_mean"        -> (AggregationAnalyzer, AggregationConstraint),
-    "has_std"         -> (AggregationAnalyzer, AggregationConstraint),
-    "has_cardinality" -> (AggregationAnalyzer, AggregationConstraint)
+    "has_min"              -> (AggregationAnalyzer, AggregationConstraint),
+    "has_max"              -> (AggregationAnalyzer, AggregationConstraint),
+    "has_sum"              -> (AggregationAnalyzer, AggregationConstraint),
+    "has_mean"             -> (AggregationAnalyzer, AggregationConstraint),
+    "has_std"              -> (AggregationAnalyzer, AggregationConstraint),
+    "has_cardinality"      -> (AggregationAnalyzer, AggregationConstraint),
+    "validate_date_format" -> (DateFormatAnalyzer, GenericConstraint),
+    "validate_schema"      -> (SchemaAnalyzer, AggregationConstraint),
+    "satisfies"            -> (SatisfiesAnalyzer, GenericConstraint)
   )
 
   def getAnalyzer(checkType: String): SparkAnalyzer =

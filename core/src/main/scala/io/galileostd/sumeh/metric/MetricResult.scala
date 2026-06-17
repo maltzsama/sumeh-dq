@@ -1,7 +1,5 @@
 package io.galileostd.sumeh.metric
 
-import io.galileostd.sumeh.rule.{ ListValue, RuleValue }
-
 /**
  * Output of an Analyzer — pure computation, no opinion.
  *

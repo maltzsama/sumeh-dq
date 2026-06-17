@@ -94,7 +94,6 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
     "pass for a complete column" in {
       val rules = Seq(RuleDefinition.validated(Left("id"), "is_complete", threshold = 1.0))
       val report = SparkValidator.validate(dfBasic, rules)
-      println(report.results.head.message)
       report.results.head.status shouldBe ValidationStatus.PASS
     }
 

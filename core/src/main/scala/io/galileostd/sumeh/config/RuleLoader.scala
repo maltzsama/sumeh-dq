@@ -28,23 +28,26 @@ object RuleLoader {
     val header = parseCsvLine(lines.head)
     lines.tail
       .filter(_.trim.nonEmpty)
-      .map { line =>
-        val values = parseCsvLine(line)
-        val row    = header.zipAll(values, "", "").toMap
-        RuleDefinition.fromMap(row.filter(_._2.nonEmpty))
+      .map {
+        line =>
+          val values = parseCsvLine(line)
+          val row    = header.zipAll(values, "", "").toMap
+          RuleDefinition.fromMap(row.filter(_._2.nonEmpty))
       }
   }
 
   def fromJsonString(json: String): List[RuleDefinition] = {
-    import upickle.default._
+    import upickle.default.*
 
     Try(read[List[Map[String, ujson.Value]]](json))
       .getOrElse(List.empty)
-      .map { row =>
-        val strMap = row.map { case (k, v) =>
-          k -> jsonValueToString(v)
-        }
-        RuleDefinition.fromMap(strMap)
+      .map {
+        row =>
+          val strMap = row.map {
+            case (k, v) =>
+              k -> jsonValueToString(v)
+          }
+          RuleDefinition.fromMap(strMap)
       }
   }
 
@@ -54,44 +57,47 @@ object RuleLoader {
 
   def toCsv(rules: List[RuleDefinition]): String = {
     val header = "field,check_type,value,threshold,execute,level,category"
-    val lines = rules.map { r =>
-      val value     = r.value.map(_.toString).getOrElse("")
-      val threshold = r.threshold.toString
-      val execute   = r.execute.toString
-      val level     = r.level
-      val category  = r.category
-      List(
-        quoteCsv(r.fieldName),
-        quoteCsv(r.checkType),
-        quoteCsv(value),
-        quoteCsv(threshold),
-        quoteCsv(execute),
-        quoteCsv(level),
-        quoteCsv(category)
-      ).mkString(",")
+    val lines = rules.map {
+      r =>
+        val value     = r.value.map(_.toString).getOrElse("")
+        val threshold = r.threshold.toString
+        val execute   = r.execute.toString
+        val level     = r.level
+        val category  = r.category
+        List(
+          quoteCsv(r.fieldName),
+          quoteCsv(r.checkType),
+          quoteCsv(value),
+          quoteCsv(threshold),
+          quoteCsv(execute),
+          quoteCsv(level),
+          quoteCsv(category)
+        ).mkString(",")
     }
     (header +: lines).mkString("\n")
   }
 
   def toJson(rules: List[RuleDefinition]): String = {
-    val arr = rules.map { r =>
-      val base = Map(
-        "field"      -> ujson.Str(r.fieldName),
-        "check_type" -> ujson.Str(r.checkType),
-        "threshold"  -> ujson.Num(r.threshold),
-        "execute"    -> ujson.Bool(r.execute),
-        "level"      -> ujson.Str(r.level),
-        "category"   -> ujson.Str(r.category)
-      ) ++
-        r.value.map(v => "value" -> ujson.Str(v.toString)).toMap ++
-        r.updatedAt.map(dt => "updated_at" -> ujson.Str(dt.toString)).toMap
+    val arr = rules.map {
+      r =>
+        val base = Map(
+          "field"      -> ujson.Str(r.fieldName),
+          "check_type" -> ujson.Str(r.checkType),
+          "threshold"  -> ujson.Num(r.threshold),
+          "execute"    -> ujson.Bool(r.execute),
+          "level"      -> ujson.Str(r.level),
+          "category"   -> ujson.Str(r.category)
+        ) ++
+          r.value.map(v => "value" -> ujson.Str(v.toString)).toMap ++
+          r.updatedAt.map(dt => "updated_at" -> ujson.Str(dt.toString)).toMap
 
-      // Metadata: converte Any pra string
-      val metadataJson = r.metadata.map { case (k, v) =>
-        k -> ujson.Str(v.toString)
-      }
+        // Metadata: converte Any pra string
+        val metadataJson = r.metadata.map {
+          case (k, v) =>
+            k -> ujson.Str(v.toString)
+        }
 
-      ujson.Obj.from(base ++ metadataJson)
+        ujson.Obj.from(base ++ metadataJson)
     }
 
     ujson.write(ujson.Arr.from(arr))
@@ -156,11 +162,11 @@ object RuleLoader {
   // -------------------------------------------------------------------------
 
   private def jsonValueToString(v: ujson.Value): String = v match {
-    case ujson.Str(s)      => s
-    case ujson.Num(n)      => if (n == n.toLong) n.toLong.toString else n.toString
-    case ujson.Bool(b)     => b.toString
-    case ujson.Null        => ""
-    case ujson.Arr(arr)    => arr.map(jsonValueToString).mkString("[", ",", "]")
-    case ujson.Obj(obj)    => obj.map { case (k, v) => s"$k:${jsonValueToString(v)}" }.mkString("{", ",", "}")
+    case ujson.Str(s)   => s
+    case ujson.Num(n)   => if (n == n.toLong) n.toLong.toString else n.toString
+    case ujson.Bool(b)  => b.toString
+    case ujson.Null     => ""
+    case ujson.Arr(arr) => arr.map(jsonValueToString).mkString("[", ",", "]")
+    case ujson.Obj(obj) => obj.map { case (k, v) => s"$k:${jsonValueToString(v)}" }.mkString("{", ",", "}")
   }
 }

@@ -217,6 +217,17 @@ object SparkValidator {
         val target = rule.value.collect { case StringValue(s) => s }.getOrElse("")
         F.to_date(F.col(field)) >= F.to_date(F.lit(target))
 
+      case "validate_date_format" =>
+        val format = rule.value.collect { case StringValue(s) => s }.getOrElse("")
+        F.to_date(F.col(field), format).isNull && F.col(field).isNotNull
+
+      case "satisfies" =>
+        val condition = rule.value.collect { case StringValue(s) => s }.getOrElse("")
+        !F.expr(condition)
+
+      case "validate_schema" =>
+        F.lit(false)
+
       case other =>
         throw new IllegalArgumentException(s"No fail condition defined for: $other")
     }

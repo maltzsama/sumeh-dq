@@ -517,3 +517,95 @@ object AggregationAnalyzer extends SparkAnalyzer {
     )
   }
 }
+
+object DateFormatAnalyzer extends SparkAnalyzer {
+  def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
+    val field = rule.field.fold(identity, _.head)
+    val format = rule.value
+      .collect { case StringValue(s) => s }
+      .getOrElse(throw new IllegalArgumentException("validate_date_format requires a format string as value"))
+    requireField(df, field)
+
+    val failCond = F.to_date(F.col(field), format).isNull && F.col(field).isNotNull
+
+    val result = df
+      .agg(
+        F.count(F.lit(1)).alias("total"),
+        F.sum(F.when(failCond, 1).otherwise(0)).alias("fail_count")
+      )
+      .collect()(0)
+
+    val total     = result.getAs[Long]("total")
+    val failCount = result.getAs[Long]("fail_count")
+
+    MetricResult(
+      metricType = "date_format",
+      field = rule.field,
+      value = passRate(total, failCount),
+      totalRows = total,
+      metadata = Map("fail_count" -> failCount, "format" -> format)
+    )
+  }
+}
+
+object SchemaAnalyzer extends SparkAnalyzer {
+  def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
+    // value contém o SchemaDef serializado como JSON string
+    val schemaJson = rule.value
+      .collect { case StringValue(s) => s }
+      .getOrElse(throw new IllegalArgumentException("validate_schema requires a JSON schema as value"))
+
+    import io.galileostd.sumeh.schema.{ SchemaDef, ColumnDef }
+    import io.galileostd.sumeh.spark.schema.SparkSchemaValidator
+    import upickle.default._
+
+    val schemaMap = read[Map[String, ujson.Value]](schemaJson).map {
+      case (k, ujson.Str(s)) => k -> s
+      case (k, v)            => k -> v.toString
+    }
+    val schemaDef = SchemaDef.fromMap(schemaMap)
+    val report    = SparkSchemaValidator.validate(df, schemaDef)
+
+    MetricResult(
+      metricType = "schema",
+      field = Left("*"),
+      value = if (report.passed) 1.0 else 0.0,
+      totalRows = df.count(),
+      metadata = Map(
+        "passed"          -> report.passed,
+        "missing_cols"    -> report.missingCols,
+        "type_errors"     -> report.typeErrors,
+        "metadata_errors" -> report.metadataErrors,
+        "extra_cols"      -> report.extraCols
+      )
+    )
+  }
+}
+
+object SatisfiesAnalyzer extends SparkAnalyzer {
+  def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
+    val condition = rule.value
+      .collect { case StringValue(s) => s }
+      .getOrElse(throw new IllegalArgumentException("satisfies requires a SQL condition as value"))
+
+    val failCond = !F.expr(condition)
+
+    val result = df
+      .agg(
+        F.count(F.lit(1)).alias("total"),
+        F.sum(F.when(failCond, 1).otherwise(0)).alias("fail_count")
+      )
+      .collect()(0)
+
+    val total     = result.getAs[Long]("total")
+    val failCount = result.getAs[Long]("fail_count")
+
+    MetricResult(
+      metricType = "satisfies",
+      field = rule.field,
+      value = passRate(total, failCount),
+      totalRows = total,
+      metadata = Map("fail_count" -> failCount, "condition" -> condition)
+    )
+  }
+}

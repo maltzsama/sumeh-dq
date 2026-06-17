@@ -2,23 +2,23 @@ package io.galileostd.sumeh.flink.internal
 
 import java.time.LocalDate
 
-import io.galileostd.sumeh.rule.{RuleDefinition, StringValue, ListValue, DoubleValue, LongValue}
+import io.galileostd.sumeh.rule.{ DoubleValue, ListValue, LongValue, RuleDefinition, StringValue }
 import io.galileostd.sumeh.validation.ValidationStatus
 import org.apache.flink.streaming.api.functions.ProcessFunction
 import org.apache.flink.types.Row
-import org.apache.flink.util.{Collector, OutputTag}
+import org.apache.flink.util.{ Collector, OutputTag }
 
 private[flink] class DQProcessFunction(
-                                        rules: Seq[RuleDefinition],
-                                        goodTag: OutputTag[Row],
-                                        errorTag: OutputTag[Row]
-                                      ) extends ProcessFunction[Row, Row] {
+    rules: Seq[RuleDefinition],
+    goodTag: OutputTag[Row],
+    errorTag: OutputTag[Row]
+) extends ProcessFunction[Row, Row] {
 
   override def processElement(
-                               row: Row,
-                               ctx: ProcessFunction[Row, Row]#Context,
-                               out: Collector[Row]
-                             ): Unit = {
+      row: Row,
+      ctx: ProcessFunction[Row, Row]#Context,
+      out: Collector[Row]
+  ): Unit = {
 
     val errors = scala.collection.mutable.ListBuffer[String]()
 
@@ -38,9 +38,10 @@ private[flink] class DQProcessFunction(
     val fieldCount = row.getArity
     val enriched   = Row.withNames()
 
-    (0 until fieldCount).foreach { i =>
-      val name = row.getFieldNames(true).toArray()(i).asInstanceOf[String]
-      enriched.setField(name, row.getField(i))
+    (0 until fieldCount).foreach {
+      i =>
+        val name = row.getFieldNames(true).toArray()(i).asInstanceOf[String]
+        enriched.setField(name, row.getField(i))
     }
 
     enriched.setField("_dq_errors", errors.mkString("|"))
