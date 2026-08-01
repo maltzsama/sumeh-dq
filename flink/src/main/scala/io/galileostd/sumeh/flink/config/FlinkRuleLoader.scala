@@ -1,5 +1,7 @@
 package io.galileostd.sumeh.flink.config
 
+import scala.collection.JavaConverters._
+
 import io.galileostd.sumeh.config.RuleLoader
 import io.galileostd.sumeh.rule.RuleDefinition
 import org.apache.flink.table.api.{ Table, TableEnvironment, TableResult }
@@ -39,7 +41,7 @@ object FlinkRuleLoader {
    * Throws: IllegalArgumentException if `field` or `check_type` columns are missing.
    */
   def fromTable(table: Table): List[RuleDefinition] = {
-    val fieldNames = table.getSchema.getFieldNames
+    val fieldNames = table.getResolvedSchema.getColumnNames.asScala.toArray
 
     val required = Set("field", "check_type")
     val cols     = fieldNames.toSet
@@ -75,15 +77,18 @@ object FlinkRuleLoader {
     val viewName = s"dq_rules_${System.nanoTime()}"
     tableEnv.createTemporaryView(viewName, table)
 
-    val sql      = s"SELECT `$column` FROM `$viewName`"
-    val selected = tableEnv.sqlQuery(sql)
-    val rows     = drain(selected.execute())
+    try {
+      val sql      = s"SELECT `$column` FROM `$viewName`"
+      val selected = tableEnv.sqlQuery(sql)
+      val rows     = drain(selected.execute())
 
-    rows.flatMap {
-      row =>
-        val json = Option(row.getField(0)).map(_.toString).getOrElse("")
-        RuleLoader.fromJsonString(json)
-    }
+      rows.flatMap {
+        row =>
+          val json = Option(row.getField(0)).map(_.toString).getOrElse("")
+          RuleLoader.fromJsonString(json)
+      }
+    } finally
+      tableEnv.dropTemporaryView(viewName)
   }
 
   /**
