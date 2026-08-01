@@ -1302,4 +1302,28 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       good.columns should contain("_dq_skipped")
     }
   }
+
+  // -------------------------------------------------------------------------
+  // Registry contract
+  // -------------------------------------------------------------------------
+
+  "Registry contract" should {
+
+    "preserve the original check type in the ValidationResult for aliases" in {
+      val rules  = Seq(RuleDefinition.validated(Left("id"), "is_primary_key", threshold = 1.0))
+      val report = SparkValidator.validate(dfBasic, rules)
+      report.results.head.checkType shouldBe "is_primary_key"
+    }
+
+    "not declare engine support without an implementation" in {
+      import io.galileostd.sumeh.rule.RuleRegistry
+      import io.galileostd.sumeh.spark.registry.SparkRegistry
+      RuleRegistry.listRules().foreach {
+        ct =>
+          val entry = RuleRegistry.getRule(ct).get
+          if (entry.engines.contains("spark"))
+            SparkRegistry.listImplemented() should contain(RuleRegistry.canonical(ct))
+      }
+    }
+  }
 }

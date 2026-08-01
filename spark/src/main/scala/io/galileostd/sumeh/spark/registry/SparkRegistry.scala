@@ -1,5 +1,6 @@
 package io.galileostd.sumeh.spark.registry
 
+import io.galileostd.sumeh.rule.RuleRegistry
 import io.galileostd.sumeh.spark.analyzer._
 import io.galileostd.sumeh.spark.constraint._
 
@@ -7,20 +8,19 @@ import io.galileostd.sumeh.spark.constraint._
  * Maps `check_type` → `(SparkAnalyzer, SparkConstraint)` for every rule the Spark engine implements.
  *
  * The runtime analogue of the core `RuleRegistry` manifest: it wires each rule name to the analyzer that computes its
- * metric and the constraint that turns that metric into a pass/fail. Mirrors Python's `VALIDATION_REGISTRY`.
+ * metric and the constraint that turns that metric into a pass/fail. Lookup canonicalizes aliases via
+ * [[io.galileostd.sumeh.rule.RuleRegistry.canonical]], so the map holds only canonical names.
  */
 object SparkRegistry {
 
-  /** Wiring table: `check_type` → `(analyzer, constraint)`. */
+  /** Wiring table: canonical `check_type` → `(analyzer, constraint)`. */
   private val registry: Map[String, (SparkAnalyzer, SparkConstraint)] = Map(
     // Completeness
     "is_complete"  -> (CompletenessAnalyzer, CompletenessConstraint),
     "are_complete" -> (MultiFieldCompletenessAnalyzer, CompletenessConstraint),
     // Uniqueness
-    "is_unique"        -> (UniquenessAnalyzer, UniquenessConstraint),
-    "are_unique"       -> (MultiFieldUniquenessAnalyzer, UniquenessConstraint),
-    "is_primary_key"   -> (UniquenessAnalyzer, UniquenessConstraint),
-    "is_composite_key" -> (MultiFieldUniquenessAnalyzer, UniquenessConstraint),
+    "is_unique"  -> (UniquenessAnalyzer, UniquenessConstraint),
+    "are_unique" -> (MultiFieldUniquenessAnalyzer, UniquenessConstraint),
     // Comparison
     "is_equal"                 -> (ComparisonAnalyzer, GenericConstraint),
     "is_equal_than"            -> (ColumnComparisonAnalyzer, GenericConstraint),
@@ -36,8 +36,6 @@ object SparkRegistry {
     // Membership
     "is_contained_in"  -> (MembershipAnalyzer, GenericConstraint),
     "not_contained_in" -> (MembershipAnalyzer, GenericConstraint),
-    "is_in"            -> (MembershipAnalyzer, GenericConstraint),
-    "not_in"           -> (MembershipAnalyzer, GenericConstraint),
     // Pattern
     "has_pattern" -> (PatternAnalyzer, GenericConstraint),
     "is_legit"    -> (LegitAnalyzer, GenericConstraint),
@@ -46,7 +44,6 @@ object SparkRegistry {
     "is_t_minus_1"    -> (DateAnalyzer, GenericConstraint),
     "is_t_minus_2"    -> (DateAnalyzer, GenericConstraint),
     "is_t_minus_3"    -> (DateAnalyzer, GenericConstraint),
-    "is_yesterday"    -> (DateAnalyzer, GenericConstraint),
     "is_past_date"    -> (DateAnalyzer, GenericConstraint),
     "is_future_date"  -> (DateAnalyzer, GenericConstraint),
     "is_date_between" -> (DateBetweenAnalyzer, GenericConstraint),
@@ -77,9 +74,9 @@ object SparkRegistry {
   )
 
   /**
-   * Returns the analyzer for a `check_type`.
+   * Returns the analyzer for a `check_type`, resolving aliases to their canonical name.
    *
-   * Args: checkType: The rule type.
+   * Args: checkType: The rule type (may be an alias).
    *
    * Returns: The `SparkAnalyzer` that computes the rule's metric.
    *
@@ -88,7 +85,7 @@ object SparkRegistry {
   def getAnalyzer(checkType: String): SparkAnalyzer =
     registry
       .getOrElse(
-        checkType,
+        RuleRegistry.canonical(checkType),
         throw new IllegalArgumentException(
           s"'$checkType' not implemented in Spark engine. Available: ${registry.keys.mkString(", ")}"
         )
@@ -96,9 +93,9 @@ object SparkRegistry {
       ._1
 
   /**
-   * Returns the constraint for a `check_type`.
+   * Returns the constraint for a `check_type`, resolving aliases to their canonical name.
    *
-   * Args: checkType: The rule type.
+   * Args: checkType: The rule type (may be an alias).
    *
    * Returns: The `SparkConstraint` that turns the metric into a pass/fail result.
    *
@@ -107,7 +104,7 @@ object SparkRegistry {
   def getConstraint(checkType: String): SparkConstraint =
     registry
       .getOrElse(
-        checkType,
+        RuleRegistry.canonical(checkType),
         throw new IllegalArgumentException(
           s"'$checkType' not implemented. Available: ${registry.keys.mkString(", ")}"
         )
@@ -115,7 +112,7 @@ object SparkRegistry {
       ._2
 
   /**
-   * All `check_type`s implemented in the Spark engine, sorted.
+   * All canonical `check_type`s implemented in the Spark engine, sorted.
    *
    * Returns: The sorted list of registered rule names.
    */

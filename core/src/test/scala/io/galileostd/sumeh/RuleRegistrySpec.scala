@@ -85,9 +85,11 @@ class RuleRegistrySpec extends AnyWordSpec with Matchers {
       RuleRegistry.isSupported("has_mean", "flink-streaming") shouldBe false
     }
 
-    "support batch engines for TABLE rules" in {
+    "support TABLE rules only on Spark batch" in {
       RuleRegistry.isSupported("has_mean", "spark") shouldBe true
-      RuleRegistry.isSupported("has_mean", "flink") shouldBe true
+      RuleRegistry.isSupported("has_mean", "flink") shouldBe false
+      RuleRegistry.isSupported("has_min", "flink") shouldBe false
+      RuleRegistry.isSupported("validate_schema", "flink") shouldBe false
     }
 
     "contain all alias rules" in {
@@ -127,7 +129,7 @@ class RuleRegistrySpec extends AnyWordSpec with Matchers {
       RuleRegistry.isSupported("satisfies", "spark-streaming") shouldBe false
       RuleRegistry.isSupported("satisfies", "flink-streaming") shouldBe false
       RuleRegistry.isSupported("satisfies", "spark") shouldBe true
-      RuleRegistry.isSupported("satisfies", "flink") shouldBe true
+      RuleRegistry.isSupported("satisfies", "flink") shouldBe false
     }
 
     "not support streaming engines for validate_schema" in {
@@ -147,6 +149,21 @@ class RuleRegistrySpec extends AnyWordSpec with Matchers {
     "filter by level ignoring case" in {
       RuleRegistry.byLevel("table") should not be empty
       RuleRegistry.byLevel("table") should have size RuleRegistry.byLevel("TABLE").size
+    }
+
+    "filter by category ignoring case" in {
+      RuleRegistry.byCategory("DATE") should not be empty
+      RuleRegistry.byCategory("date") should have size RuleRegistry.byCategory("Date").size
+    }
+
+    "resolve aliases to the canonical check type" in {
+      RuleRegistry.canonical("is_primary_key") shouldBe "is_unique"
+      RuleRegistry.canonical("is_composite_key") shouldBe "are_unique"
+      RuleRegistry.canonical("is_in") shouldBe "is_contained_in"
+      RuleRegistry.canonical("not_in") shouldBe "not_contained_in"
+      RuleRegistry.canonical("is_yesterday") shouldBe "is_t_minus_1"
+      RuleRegistry.canonical("is_unique") shouldBe "is_unique"
+      RuleRegistry.canonical("inexistente") shouldBe "inexistente"
     }
   }
 }

@@ -3,7 +3,7 @@ package io.galileostd.sumeh.flink.internal
 import java.time.format.DateTimeFormatter
 import java.time.LocalDate
 
-import io.galileostd.sumeh.rule.{ DoubleValue, ListValue, LongValue, RuleDefinition, StringValue }
+import io.galileostd.sumeh.rule.{ DoubleValue, ListValue, LongValue, RuleDefinition, RuleRegistry, StringValue }
 import org.apache.flink.streaming.api.functions.ProcessFunction
 import org.apache.flink.types.Row
 import org.apache.flink.util.{ Collector, OutputTag }
@@ -155,7 +155,7 @@ private[flink] object DQProcessFunction {
   private def checkRule(values: Map[String, Any], rule: RuleDefinition): Boolean = {
     val field     = rule.field.fold(identity, _.head)
     val rawValue  = values.getOrElse(field, null)
-    val checkType = rule.checkType
+    val checkType = RuleRegistry.canonical(rule.checkType)
 
     if (
       rawValue == null &&
@@ -202,10 +202,10 @@ private[flink] object DQProcessFunction {
           Option(values.getOrElse(other, null)).map(_.toString).getOrElse("")
 
       // Membership
-      case "is_contained_in" | "is_in" =>
+      case "is_contained_in" =>
         val vals = listValuesAsString(rule.value)
         vals.contains(rawValue.toString)
-      case "not_contained_in" | "not_in" =>
+      case "not_contained_in" =>
         val vals = listValuesAsString(rule.value)
         !vals.contains(rawValue.toString)
 
@@ -217,13 +217,13 @@ private[flink] object DQProcessFunction {
         rawValue != null && rawValue.toString.trim.nonEmpty
 
       // Date
-      case "all_date_checks"               => rawValue != null && safeToDate(rawValue) != null
-      case "is_today"                      => toDate(rawValue) == LocalDate.now()
-      case "is_t_minus_1" | "is_yesterday" => toDate(rawValue) == LocalDate.now().minusDays(1)
-      case "is_t_minus_2"                  => toDate(rawValue) == LocalDate.now().minusDays(2)
-      case "is_t_minus_3"                  => toDate(rawValue) == LocalDate.now().minusDays(3)
-      case "is_past_date"                  => toDate(rawValue).isBefore(LocalDate.now())
-      case "is_future_date"                => toDate(rawValue).isAfter(LocalDate.now())
+      case "all_date_checks" => rawValue != null && safeToDate(rawValue) != null
+      case "is_today"        => toDate(rawValue) == LocalDate.now()
+      case "is_t_minus_1"    => toDate(rawValue) == LocalDate.now().minusDays(1)
+      case "is_t_minus_2"    => toDate(rawValue) == LocalDate.now().minusDays(2)
+      case "is_t_minus_3"    => toDate(rawValue) == LocalDate.now().minusDays(3)
+      case "is_past_date"    => toDate(rawValue).isBefore(LocalDate.now())
+      case "is_future_date"  => toDate(rawValue).isAfter(LocalDate.now())
       case "is_on_weekday" =>
         val dow = toDate(rawValue).getDayOfWeek.getValue
         dow >= 1 && dow <= 5
