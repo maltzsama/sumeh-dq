@@ -6,7 +6,7 @@ import java.time.LocalDate
 import io.galileostd.sumeh.rule.RuleDefinition
 import io.galileostd.sumeh.spark.SparkValidator
 import io.galileostd.sumeh.validation.ValidationStatus
-import org.apache.spark.sql.{ Row, SparkSession }
+import org.apache.spark.sql.{ functions => F, Row, SparkSession }
 import org.apache.spark.sql.types._
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
@@ -1055,6 +1055,127 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       )
       val report = SparkValidator.validate(dfBasic, Seq(rule))
       report.results.head.status shouldBe ValidationStatus.ERROR
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Single-pass validation
+  // -------------------------------------------------------------------------
+
+  "Single-pass validation" should {
+
+    "run a constant number of Spark jobs regardless of rule count" in {
+      import io.galileostd.sumeh.rule.LongValue
+      import org.apache.spark.scheduler.{ SparkListener, SparkListenerJobStart }
+
+      class JobCounter extends SparkListener {
+        @volatile var jobs: Int                                        = 0
+        override def onJobStart(jobStart: SparkListenerJobStart): Unit = jobs += 1
+      }
+
+      def simpleRules(n: Int): Seq[RuleDefinition] =
+        (1 to n).map {
+          i => RuleDefinition.validated(Left("age"), "is_greater_than", value = Some(LongValue(0)), threshold = 1.0)
+        }
+
+      val counter = new JobCounter
+      spark.sparkContext.addSparkListener(counter)
+      try {
+        val report5 = SparkValidator.validate(dfBasic, simpleRules(5))
+        report5.results should have size 5
+        val jobs5 = counter.jobs
+
+        counter.jobs = 0
+        val report20 = SparkValidator.validate(dfBasic, simpleRules(20))
+        report20.results should have size 20
+        val jobs20 = counter.jobs
+
+        jobs5 shouldBe jobs20
+      } finally
+        spark.sparkContext.removeSparkListener(counter)
+    }
+
+    "annotate one _dq_errors entry per violated rule on the same row" in {
+      import io.galileostd.sumeh.rule.LongValue
+      val df = spark.createDataFrame(
+        spark.sparkContext.parallelize(
+          Seq(Row(0, null), Row(2, "alice"))
+        ),
+        StructType(
+          Seq(StructField("id", IntegerType, nullable = true), StructField("name", StringType, nullable = true))
+        )
+      )
+      val rules = Seq(
+        RuleDefinition.validated(Left("id"), "is_greater_than", value = Some(LongValue(0)), threshold = 1.0),
+        RuleDefinition.validated(Left("name"), "is_complete", threshold = 1.0)
+      )
+      val report   = SparkValidator.validate(df, rules)
+      val (_, bad) = report.dfValidated.get.splitByErrors()
+      val entries  = bad.select(F.size(F.col("_dq_errors")).alias("n")).collect()(0).getAs[Int]("n")
+      entries shouldBe 2
+    }
+
+    "keep the _dq_errors schema equal to the error struct schema" in {
+      import io.galileostd.sumeh.rule.LongValue
+      val df = spark.createDataFrame(
+        spark.sparkContext.parallelize(Seq(Row(1, null), Row(2, "alice"))),
+        StructType(
+          Seq(StructField("id", IntegerType, nullable = true), StructField("name", StringType, nullable = true))
+        )
+      )
+      val rules = Seq(
+        RuleDefinition.validated(Left("name"), "is_complete", threshold = 1.0)
+      )
+      val report = SparkValidator.validate(df, rules)
+      val dqType = report.dfValidated.get.toNative.schema("_dq_errors").dataType
+
+      val expected = ArrayType(
+        StructType(
+          Seq(
+            StructField("rule_id", StringType, nullable = true),
+            StructField("check_type", StringType, nullable = true),
+            StructField("field", StringType, nullable = true),
+            StructField("category", StringType, nullable = true),
+            StructField("message", StringType, nullable = true),
+            StructField("expected", StringType, nullable = true),
+            StructField("actual", StringType, nullable = true)
+          )
+        )
+      )
+      dqType shouldBe expected
+    }
+
+    "report pass rate 1.0 on an empty DataFrame with multiple rules" in {
+      val empty = spark.createDataFrame(
+        spark.sparkContext.emptyRDD[Row],
+        StructType(
+          Seq(StructField("id", IntegerType, nullable = true), StructField("name", StringType, nullable = true))
+        )
+      )
+      val rules = Seq(
+        RuleDefinition.validated(Left("id"), "is_complete", threshold = 1.0),
+        RuleDefinition.validated(Left("name"), "is_complete", threshold = 1.0)
+      )
+      val report = SparkValidator.validate(empty, rules)
+      report.results.size shouldBe 2
+      report.results.foreach(_.status shouldBe ValidationStatus.PASS)
+      report.totalRows shouldBe 0L
+      report.passRate shouldBe 1.0
+    }
+
+    "produce ERROR for one bad rule while the other four still validate" in {
+      import io.galileostd.sumeh.rule.LongValue
+      val rules = Seq(
+        RuleDefinition.validated(Left("id"), "is_complete", threshold = 1.0),
+        RuleDefinition.validated(Left("missing"), "is_complete", threshold = 1.0),
+        RuleDefinition.validated(Left("age"), "is_greater_than", value = Some(LongValue(0)), threshold = 1.0),
+        RuleDefinition.validated(Left("age"), "is_positive", threshold = 1.0),
+        RuleDefinition.validated(Left("status"), "is_complete", threshold = 1.0)
+      )
+      val report = SparkValidator.validate(dfBasic, rules)
+      report.results should have size 5
+      report.results.count(_.status == ValidationStatus.ERROR) shouldBe 1
+      report.results.count(_.status == ValidationStatus.PASS) shouldBe 4
     }
   }
 }
