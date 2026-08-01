@@ -154,6 +154,32 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
     StructType(Seq(StructField("dt", StringType, nullable = true)))
   )
 
+  def dfMixedDates = spark.createDataFrame(
+    spark.sparkContext.parallelize(
+      Seq(
+        Row("2024-01-15"),
+        Row("2024-02-30"), // impossible calendar date
+        Row("not-a-date"),
+        Row(null)
+      )
+    ),
+    StructType(Seq(StructField("dt", StringType, nullable = true)))
+  )
+
+  def dfUniform = spark.createDataFrame(
+    spark.sparkContext.parallelize(
+      Seq(Row("a"), Row("a"), Row("b"), Row("b"))
+    ),
+    StructType(Seq(StructField("category", StringType, nullable = true)))
+  )
+
+  def dfConstant = spark.createDataFrame(
+    spark.sparkContext.parallelize(
+      Seq(Row("x"), Row("x"), Row("x"), Row("x"))
+    ),
+    StructType(Seq(StructField("category", StringType, nullable = true)))
+  )
+
   // -------------------------------------------------------------------------
   // Completeness
   // -------------------------------------------------------------------------
@@ -666,6 +692,22 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       val report = SparkValidator.validate(df, rules)
       report.results.head.status shouldBe ValidationStatus.FAIL
     }
+
+    "pass all_date_checks when every date is valid" in {
+      val rules  = Seq(RuleDefinition.validated(Left("dt"), "all_date_checks", threshold = 1.0))
+      val report = SparkValidator.validate(dfDateRange, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+      report.results.head.actualValue.get shouldBe 1.0
+    }
+
+    "fail all_date_checks on unparseable and impossible dates (nulls skip)" in {
+      val rules  = Seq(RuleDefinition.validated(Left("dt"), "all_date_checks", threshold = 1.0))
+      val report = SparkValidator.validate(dfMixedDates, rules)
+      report.results.head.status shouldBe ValidationStatus.FAIL
+      report.results.head.actualValue.get shouldBe 0.5
+      report.split()._1.count() shouldBe 2 // real calendar date + null pass
+      report.split()._2.count() shouldBe 2 // impossible date and garbage fail
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -727,6 +769,45 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       report.results.head.status shouldBe ValidationStatus.PASS
       report.results.head.actualValue.get should be > 8.9
       report.results.head.actualValue.get should be < 8.92
+    }
+
+    "pass has_entropy for a uniform column (H = 1.0)" in {
+      import io.galileostd.sumeh.rule.DoubleValue
+      val rules =
+        Seq(
+          RuleDefinition.validated(Left("category"), "has_entropy", value = Some(DoubleValue(1.0)), threshold = 0.001)
+        )
+      val report = SparkValidator.validate(dfUniform, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+      report.results.head.actualValue.get shouldBe 1.0 +- 0.001
+    }
+
+    "fail has_entropy on a wrong expected value" in {
+      import io.galileostd.sumeh.rule.DoubleValue
+      val rules =
+        Seq(RuleDefinition.validated(Left("category"), "has_entropy", value = Some(DoubleValue(0.5)), threshold = 0.0))
+      val report = SparkValidator.validate(dfUniform, rules)
+      report.results.head.status shouldBe ValidationStatus.FAIL
+    }
+
+    "pass has_infogain for a uniform column (normalized H = 1.0)" in {
+      import io.galileostd.sumeh.rule.DoubleValue
+      val rules = Seq(
+        RuleDefinition.validated(Left("category"), "has_infogain", value = Some(DoubleValue(1.0)), threshold = 0.001)
+      )
+      val report = SparkValidator.validate(dfUniform, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+      report.results.head.actualValue.get shouldBe 1.0 +- 0.001
+    }
+
+    "pass has_infogain for a constant column (H / log2(n) = 0.0)" in {
+      import io.galileostd.sumeh.rule.DoubleValue
+      val rules = Seq(
+        RuleDefinition.validated(Left("category"), "has_infogain", value = Some(DoubleValue(0.0)), threshold = 0.0)
+      )
+      val report = SparkValidator.validate(dfConstant, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+      report.results.head.actualValue.get shouldBe 0.0 +- 1e-9
     }
   }
 

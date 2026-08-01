@@ -1,16 +1,22 @@
-# Sumeh
+# <h1 align="center"><img src="docs/img/sumeh.svg" alt="Sumeh DQ" width="40" style="vertical-align: middle;" /> Sumeh DQ</h1>
+
+<p align="center">
+  <a href="https://github.com/maltzsama/sumeh-dq/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/maltzsama/sumeh-dq/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://codecov.io/gh/maltzsama/sumeh-dq"><img alt="Coverage" src="https://codecov.io/gh/maltzsama/sumeh-dq/graph/badge.svg"></a>
+  <a href="https://github.com/maltzsama/sumeh-dq/releases"><img alt="Release" src="https://img.shields.io/github/v/release/maltzsama/sumeh-dq?color=blue&label=version&logo=github"></a>
+  <a href="https://www.apache.org/licenses/LICENSE-2.0"><img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-green.svg"></a>
+  <a href="https://www.scala-lang.org"><img alt="Scala" src="https://img.shields.io/badge/scala-2.12%20%7C%202.13-orange.svg"></a>
+</p>
 
 > **Data Quality for the modern data stack.** One rule engine, two execution backends — validate your Spark batches and your Flink streams with the same 50+ rule catalog.
 
 Sumeh is a Scala data-quality library that runs the same declarative validation rules against **Apache Spark** (batch) and **Apache Flink** (streaming). It follows the **Bifurcation Pattern**: a single pass over your data tags every bad row, so you can split `(good, bad)` without reprocessing or shuffling.
 
-```text
-  input ──► ┌──────────────┐
-            │   sumeh      │────► good rows
-            │   validator  │
-            └──────────────┘
-                  │
-                  └──► bad rows + _dq_errors  (which rule failed, and why)
+```mermaid
+flowchart LR
+    input["input"] --> sumeh["sumeh validator"]
+    sumeh -->|"passed"| good["good rows"]
+    sumeh -->|"failed"| bad["bad rows + _dq_errors<br/>which rule failed, and why"]
 ```
 
 ---
@@ -21,6 +27,7 @@ Sumeh is a Scala data-quality library that runs the same declarative validation 
 - **One rule catalog, two engines** — Spark batch and Flink streaming share the exact same `RuleDefinition` model.
 - **Single-pass bifurcation** — bad rows are annotated in-flight with a `_dq_errors` struct; `split()` separates good from bad with **zero extra scans**.
 - **Streaming honesty** — rules that can't run on an unbounded stream (uniqueness, table-level aggregation, custom SQL) are **skipped with a reason**, never silently passed.
+- **Data profiler** — column-level statistics (nulls, distinct, min/max/mean/std/sum) in a single validation pass.
 - **Multiple rule sources** — define rules in Scala, JSON, CSV, a Spark DataFrame, or a Flink Table.
 - **Schema contracts** — validate column types, nullability, comments, and nested struct/array schemas.
 - **Cross-built** for Scala `2.12` and `2.13`.
@@ -277,6 +284,26 @@ Run it as a rule too: `RuleDefinition.validated(Left("_schema"), "validate_schem
 
 ---
 
+## Data Profiling
+
+Get column-level statistics without writing any validation rules — a single pass, reusing the same analyzers as validation.
+
+```scala
+import io.galileostd.sumeh.spark.SparkProfiler
+
+val profile = SparkProfiler.profile(df)                    // ProfileReport
+val profile = SparkProfiler.profile(df, sampleFraction = Some(0.1)) // sampled
+
+profile.columnProfiles("revenue").mean      // Option[Double]
+profile.columnProfiles("email").distinctCount
+profile.tableStats                           // Map(total_rows, columns_count, execution_time_ms)
+profile.toJson                               // JSON payload for dashboards / metrics
+```
+
+For every column it measures completeness and cardinality; numeric columns additionally get `min`, `max`, `mean`, `std_dev`, and `sum`. Output mirrors the Python `profile()` structure: `{ "table_stats": {...}, "column_profiles": { col -> {...} } }`.
+
+---
+
 ## Rule Catalog
 
 | Category | Rules |
@@ -286,15 +313,16 @@ Run it as a rule too: `RuleDefinition.validated(Left("_schema"), "validate_schem
 | **comparison** | `is_equal`, `is_equal_than`, `is_between`, `is_greater_than`, `is_less_than`, `is_greater_or_equal_than`, `is_less_or_equal_than`, `is_positive`, `is_negative`, `is_in_millions`, `is_in_billions` |
 | **membership** | `is_contained_in`, `not_contained_in`, `is_in`¹, `not_in`¹ |
 | **pattern** | `has_pattern`, `is_legit` |
-| **date** | `is_today`, `is_t_minus_1`, `is_t_minus_2`, `is_t_minus_3`, `is_yesterday`¹, `is_past_date`, `is_future_date`, `is_date_between`, `is_date_after`, `is_date_before`, `is_on_weekday`, `is_on_weekend`, `is_on_monday`…`is_on_sunday`, `validate_date_format` |
+| **date** | `is_today`, `is_t_minus_1`, `is_t_minus_2`, `is_t_minus_3`, `is_yesterday`¹, `is_past_date`, `is_future_date`, `is_date_between`, `is_date_after`, `is_date_before`, `is_on_weekday`, `is_on_weekend`, `is_on_monday`…`is_on_sunday`, `validate_date_format`, `all_date_checks` |
 | **sql** | `satisfies` |
-| **aggregation** | `has_min`, `has_max`, `has_sum`, `has_mean`, `has_std`, `has_cardinality` |
+| **aggregation** | `has_min`, `has_max`, `has_sum`, `has_mean`, `has_std`, `has_cardinality`, `has_entropy`, `has_infogain` |
 | **schema** | `validate_schema` |
 
 ¹ alias of another rule.
 
 - **Aliases** resolve to their target (`is_in` → `is_contained_in`, `is_primary_key` → `is_unique`, ...).
 - **Engine support** is enforced: `RuleRegistry.isSupported(checkType, engine)` is `false` for uniqueness rules (`is_unique`, `are_unique`, `is_primary_key`, `is_composite_key`) everywhere except **Spark batch**, for `satisfies` in any streaming engine (`spark-streaming`, `flink-streaming`), and for TABLE-level rules in any streaming engine.
+- **`has_entropy`** is the Shannon entropy `-Σ pᵢ·log₂(pᵢ)` of the value distribution; **`has_infogain`** is the normalized entropy `H / log₂(cardinality)` (1.0 = uniform, 0.0 = single value). Both are TABLE-level, batch-only, and compare against `value` within the relative `threshold`.
 - `RuleRegistry.listRules()`, `.byCategory(...)`, `.byLevel(...)`, `.getRule(...)` let you introspect the catalog at runtime.
 
 ---
@@ -333,8 +361,8 @@ sbt -batch -Dspark.version=3.5.5 "++2.12.18" "spark/compile"
 # Flink under the 1.x line
 sbt -batch -Dflink.version=1.20.0 "flink/test"
 
-# Statement coverage gate for core (>= 90%)
-sbt -batch "coverage" "core/test" "core/coverageReport"
+# Statement coverage for all modules (core gate >= 90%) + aggregate report
+sbt -batch "coverage" "test" "coverageAggregate" "coverageReport"
 
 # Formatting
 sbt scalafmtAll scalafmtCheckAll

@@ -272,6 +272,7 @@ object SparkValidator {
         F.col(field).isNull || (F.trim(F.col(field)) === "")
 
       // Date
+      case "all_date_checks"               => F.col(field).isNotNull && DateExpr.safeToDate(F.col(field)).isNull
       case "is_today"                      => DateExpr.safeToDate(F.col(field)) =!= F.current_date()
       case "is_t_minus_1" | "is_yesterday" => DateExpr.safeToDate(F.col(field)) =!= F.date_sub(F.current_date(), 1)
       case "is_t_minus_2"                  => DateExpr.safeToDate(F.col(field)) =!= F.date_sub(F.current_date(), 2)

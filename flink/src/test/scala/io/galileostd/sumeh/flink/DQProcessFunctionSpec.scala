@@ -305,6 +305,18 @@ class DQProcessFunctionSpec extends AnyWordSpec with Matchers {
       evaluate(base + ("dt" -> "2024-05-06"), rules)._1 shouldBe empty
       evaluate(base + ("dt" -> "2025-01-01"), rules)._1 should have size 1
     }
+
+    "pass all_date_checks for a real calendar date" in {
+      val rules = Seq(RuleDefinition.validated(Left("dt"), "all_date_checks"))
+      evaluate(base + ("dt" -> "2024-02-29"), rules)._1 shouldBe empty // leap day is valid
+    }
+
+    "flag all_date_checks for unparseable and impossible dates, skip null" in {
+      val rules = Seq(RuleDefinition.validated(Left("dt"), "all_date_checks"))
+      evaluate(base + ("dt" -> "not-a-date"), rules)._1 should have size 1
+      evaluate(base + ("dt" -> "2024-02-30"), rules)._1 should have size 1 // impossible calendar date
+      evaluate(base + ("dt" -> null), rules)._1 shouldBe empty // nulls skip date checks
+    }
   }
 
   "edge cases" should {

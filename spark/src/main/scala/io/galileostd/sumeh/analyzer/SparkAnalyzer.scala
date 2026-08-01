@@ -361,6 +361,7 @@ object DateAnalyzer extends SparkAnalyzer {
     val today   = F.current_date()
 
     val failCond = checkType match {
+      case "all_date_checks"               => F.col(field).isNotNull && DateExpr.safeToDate(F.col(field)).isNull
       case "is_today"                      => dateCol =!= today
       case "is_t_minus_1" | "is_yesterday" => dateCol =!= F.date_sub(today, 1)
       case "is_t_minus_2"                  => dateCol =!= F.date_sub(today, 2)
@@ -487,6 +488,8 @@ object AggregationAnalyzer extends SparkAnalyzer {
       case "has_mean"        => df.agg(F.mean(field)).collect()(0).getAs[Any](0)
       case "has_std"         => df.agg(F.stddev(field)).collect()(0).getAs[Any](0)
       case "has_cardinality" => df.agg(F.countDistinct(field)).collect()(0).getAs[Any](0)
+      case "has_entropy"     => entropy(df, field)
+      case "has_infogain"    => normalizedEntropy(df, field)
       case other             => throw new IllegalArgumentException(s"Unknown aggregation: $other")
     }
 
@@ -502,6 +505,30 @@ object AggregationAnalyzer extends SparkAnalyzer {
       totalRows = df.count(),
       metadata = Map("metric" -> checkType, "value" -> value)
     )
+  }
+
+  private def entropy(df: DataFrame, field: String): Double = {
+    val counts = df.select(field).na.drop().groupBy(field).count()
+    val total  = counts.agg(F.sum("count")).collect()(0).getAs[Long](0)
+    if (total == 0L) 0.0
+    else
+      counts
+        .withColumn("p", F.col("count") / F.lit(total.toDouble))
+        .agg(F.sum(F.negate(F.col("p")) * F.log2(F.col("p"))))
+        .collect()(0)
+        .getAs[Double](0)
+  }
+
+  private def normalizedEntropy(df: DataFrame, field: String): Double = {
+    val h = entropy(df, field)
+    val distinct = df
+      .select(field)
+      .na
+      .drop()
+      .agg(F.countDistinct(field))
+      .collect()(0)
+      .getAs[Long](0)
+    if (distinct <= 1L) 0.0 else h / (math.log(distinct.toDouble) / math.log(2.0))
   }
 }
 

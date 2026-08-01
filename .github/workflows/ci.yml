@@ -72,8 +72,25 @@ jobs:
           distribution: 'corretto'
           cache: 'sbt'
 
-      - name: Core coverage gate (>= 90% statements)
-        run: sbt "coverage" "core/test" "core/coverageReport"
+      - name: Coverage (all modules) + aggregate report
+        run: sbt "coverage" "test" "coverageAggregate" "coverageReport"
+
+      - name: Locate aggregate coverage report
+        id: report
+        run: |
+          REPORT=$(find target -name "cobertura.xml" | head -1)
+          if [ -z "$REPORT" ]; then
+            echo "No aggregate coverage report found"
+            exit 1
+          fi
+          echo "report=$REPORT" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ${{ steps.report.outputs.report }}
+          flags: unittests
 
   publish:
     needs: [test, coverage]

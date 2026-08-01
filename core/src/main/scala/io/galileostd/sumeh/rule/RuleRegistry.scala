@@ -87,6 +87,13 @@ object RuleRegistry {
     RuleEntry("is_on_saturday", "ROW", "date", "Checks if date is Saturday", row),
     RuleEntry("is_on_sunday", "ROW", "date", "Checks if date is Sunday", row),
     RuleEntry("validate_date_format", "ROW", "date", "Checks if date string matches expected format", row),
+    RuleEntry(
+      "all_date_checks",
+      "ROW",
+      "date",
+      "Runs comprehensive date validity suite (non-null and a real calendar date)",
+      row
+    ),
     // SQL
     RuleEntry("satisfies", "ROW", "sql", "Validates custom SQL condition", streamingImpossible),
     // Aggregation — batch only, no streaming
@@ -96,6 +103,14 @@ object RuleRegistry {
     RuleEntry("has_mean", "TABLE", "aggregation", "Validates column average/mean", batch),
     RuleEntry("has_std", "TABLE", "aggregation", "Validates column standard deviation", batch),
     RuleEntry("has_cardinality", "TABLE", "aggregation", "Validates number of distinct values", batch),
+    RuleEntry("has_entropy", "TABLE", "aggregation", "Validates column Shannon entropy", batch),
+    RuleEntry(
+      "has_infogain",
+      "TABLE",
+      "aggregation",
+      "Validates column normalized entropy (H / log2(cardinality))",
+      batch
+    ),
     // Schema — batch only
     RuleEntry("validate_schema", "TABLE", "schema", "Validates DataFrame schema structure", batch)
   )

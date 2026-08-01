@@ -138,6 +138,7 @@ private[flink] object DQProcessFunction {
         rawValue != null && rawValue.toString.trim.nonEmpty
 
       // Date
+      case "all_date_checks"               => rawValue != null && safeToDate(rawValue) != null
       case "is_today"                      => toDate(rawValue) == LocalDate.now()
       case "is_t_minus_1" | "is_yesterday" => toDate(rawValue) == LocalDate.now().minusDays(1)
       case "is_t_minus_2"                  => toDate(rawValue) == LocalDate.now().minusDays(2)
@@ -203,6 +204,12 @@ private[flink] object DQProcessFunction {
     case s: String        => LocalDate.parse(s)
     case _                => throw new IllegalArgumentException(s"Cannot convert $v to LocalDate")
   }
+
+  private def safeToDate(v: Any): LocalDate =
+    try toDate(v)
+    catch {
+      case _: Exception => null
+    }
 
   private def ruleValueToDouble(v: Option[io.galileostd.sumeh.rule.RuleValue]): Double = v match {
     case Some(LongValue(l))   => l.toDouble
