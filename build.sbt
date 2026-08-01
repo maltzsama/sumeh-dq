@@ -112,6 +112,7 @@ lazy val flink = (project in file("flink"))
       "org.apache.flink" % "flink-table-api-java"        % flinkVersion.value % Provided,
       "org.apache.flink" % "flink-table-api-java-bridge" % flinkVersion.value % Provided,
       "org.apache.flink" % "flink-clients"               % flinkVersion.value % Test,
+      "org.scala-lang.modules" %% "scala-collection-compat" % "2.12.0",
       "org.scalatest"   %% "scalatest"                   % scalatestVersion   % Test
     ),
     coverageMinimumStmtTotal := 80,

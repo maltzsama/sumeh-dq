@@ -1,6 +1,6 @@
 package io.galileostd.sumeh.flink.config
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 
 import io.galileostd.sumeh.config.RuleLoader
 import io.galileostd.sumeh.rule.RuleDefinition
