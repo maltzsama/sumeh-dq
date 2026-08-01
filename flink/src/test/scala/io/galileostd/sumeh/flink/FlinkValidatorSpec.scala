@@ -182,5 +182,38 @@ class FlinkValidatorSpec extends AnyWordSpec with Matchers {
       json should include("\"field\":\"name\"")
       json should include("\"field\":\"age\"")
     }
+
+    "apply the correct regex when there are two different has_pattern rules" in {
+      val emailType = new RowTypeInfo(
+        Array[TypeInformation[_]](Types.STRING, Types.STRING),
+        Array[String]("email", "cpf")
+      )
+      val env = StreamExecutionEnvironment.getExecutionEnvironment
+      env.setParallelism(1)
+      def row(email: String, cpf: String): Row = {
+        val r = new Row(2)
+        r.setField(0, email)
+        r.setField(1, cpf)
+        r
+      }
+      // line 1 passes both: email has '@', cpf has 11 digits
+      // line 2 fails only cpf: email has '@', cpf does not match
+      val stream = env.fromCollection(
+        java.util.Arrays.asList(row("a@b.com", "12345678901"), row("x@y.z", "abc")),
+        emailType
+      )
+
+      val validated = FlinkValidator.validate(
+        stream,
+        Seq(
+          RuleDefinition.validated(Left("email"), "has_pattern", value = Some(StringValue("@"))),
+          RuleDefinition.validated(Left("cpf"), "has_pattern", value = Some(StringValue("^[0-9]{11}$")))
+        )
+      )
+
+      val (good, bad) = validated.split()
+      good.executeAndCollect(10).asScala.map(_.getField(0).asInstanceOf[String]).toSet shouldBe Set("a@b.com")
+      bad.executeAndCollect(10).asScala.map(_.getField(0).asInstanceOf[String]).toSet shouldBe Set("x@y.z")
+    }
   }
 }

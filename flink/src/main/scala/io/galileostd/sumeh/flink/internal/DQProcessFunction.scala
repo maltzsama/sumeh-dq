@@ -25,18 +25,19 @@ private[flink] class DQProcessFunction(
 ) extends ProcessFunction[Row, Row] {
 
   /**
-   * Pre-compiled regexes for every `has_pattern` rule, keyed by canonical `checkType`.
+   * Pre-compiled regexes for every `has_pattern` rule, keyed by the regex itself.
    *
-   * Compiled once per operator (not per record), since streaming evaluates every record.
+   * Compiled eagerly once per operator (not per record), so an invalid regex fails at job construction. Keyed by the
+   * regex string rather than `checkType` so two `has_pattern` rules with different patterns each use their own.
    */
-  private lazy val patternCache: Map[String, java.util.regex.Pattern] =
+  private val patternCache: Map[String, java.util.regex.Pattern] =
     rules
       .filter(r => RuleRegistry.canonical(r.checkType) == "has_pattern")
-      .map(
+      .map {
         r =>
-          r.checkType -> java.util.regex.Pattern
-            .compile(DQProcessFunction.requireString(r, "has_pattern requires a regex pattern"))
-      )
+          val regex = DQProcessFunction.requireString(r, "has_pattern requires a regex pattern")
+          regex -> java.util.regex.Pattern.compile(regex)
+      }
       .toMap
 
   /**
@@ -232,10 +233,8 @@ private[flink] object DQProcessFunction {
 
       // Pattern
       case "has_pattern" =>
-        val pattern = patterns.getOrElse(
-          rule.checkType,
-          java.util.regex.Pattern.compile(requireString(rule, "has_pattern requires a regex pattern"))
-        )
+        val regex   = requireString(rule, "has_pattern requires a regex pattern")
+        val pattern = patterns.getOrElse(regex, java.util.regex.Pattern.compile(regex))
         pattern.matcher(rawValue.toString).find()
       case "is_legit" =>
         rawValue != null && rawValue.toString.trim.nonEmpty
