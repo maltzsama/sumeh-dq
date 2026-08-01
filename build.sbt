@@ -43,6 +43,11 @@ ThisBuild / publishTo := {
   else None
 }
 
+// A local `publish` without the GITHUB_PACKAGES env var becomes an explicit
+// no-op instead of failing with a cryptic "repository not specified" error.
+// `publishLocal` is unaffected.
+ThisBuild / publish / skip := !sys.env.contains("GITHUB_PACKAGES")
+
 ThisBuild / credentials ++= sys.env
   .get("GITHUB_TOKEN")
   .map(token => Credentials("GitHub Package Registry", "maven.pkg.github.com", "maltzsama", token))
