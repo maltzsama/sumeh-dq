@@ -114,9 +114,10 @@ class SparkProfilerSpec extends AnyWordSpec with Matchers with BeforeAndAfterAll
       }
 
       def table(colCount: Int): org.apache.spark.sql.DataFrame = {
-        val rows = (1 to 20).map { i =>
-          val values = (0 until colCount).flatMap(_ => Seq(Integer.valueOf(i), java.lang.Double.valueOf(i.toDouble)))
-          Row.fromSeq(values.toList)
+        val rows = (1 to 20).map {
+          i =>
+            val values = (0 until colCount).flatMap(_ => Seq(Integer.valueOf(i), java.lang.Double.valueOf(i.toDouble)))
+            Row.fromSeq(values.toList)
         }
         val fields = (0 until colCount).flatMap {
           i =>

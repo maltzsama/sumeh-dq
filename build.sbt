@@ -113,12 +113,12 @@ lazy val flink = (project in file("flink"))
     scalaVersion       := "2.13.16",
     crossScalaVersions := Seq("2.12.18", "2.13.16"),
     libraryDependencies ++= Seq(
-      "org.apache.flink" % "flink-streaming-java"        % flinkVersion.value % Provided,
-      "org.apache.flink" % "flink-table-api-java"        % flinkVersion.value % Provided,
-      "org.apache.flink" % "flink-table-api-java-bridge" % flinkVersion.value % Provided,
-      "org.apache.flink" % "flink-clients"               % flinkVersion.value % Test,
-      "org.scala-lang.modules" %% "scala-collection-compat" % "2.12.0",
-      "org.scalatest"   %% "scalatest"                   % scalatestVersion   % Test
+      "org.apache.flink"        % "flink-streaming-java"        % flinkVersion.value % Provided,
+      "org.apache.flink"        % "flink-table-api-java"        % flinkVersion.value % Provided,
+      "org.apache.flink"        % "flink-table-api-java-bridge" % flinkVersion.value % Provided,
+      "org.apache.flink"        % "flink-clients"               % flinkVersion.value % Test,
+      "org.scala-lang.modules" %% "scala-collection-compat"     % "2.12.0",
+      "org.scalatest"          %% "scalatest"                   % scalatestVersion   % Test
     ),
     coverageMinimumStmtTotal := 80,
     coverageFailOnMinimum    := true,
