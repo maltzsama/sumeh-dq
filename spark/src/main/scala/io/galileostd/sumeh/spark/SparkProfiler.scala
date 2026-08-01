@@ -1,7 +1,7 @@
 package io.galileostd.sumeh.spark
 
 import io.galileostd.sumeh.rule.RuleDefinition
-import io.galileostd.sumeh.validation.ValidationResult
+import io.galileostd.sumeh.spark.registry.SparkRegistry
 import org.apache.spark.sql.types.{
   ByteType,
   DecimalType,
@@ -15,11 +15,11 @@ import org.apache.spark.sql.types.{
 import org.apache.spark.sql.DataFrame
 
 /**
- * Column-level statistics for a Spark DataFrame, computed in a single validation pass.
+ * Column-level statistics for a Spark DataFrame.
  *
  * Mirrors the Python `profile(df)` output: for every column it measures completeness and cardinality; for numeric
- * columns it also measures min/max/mean/std/sum. The profiler reuses the existing
- * [[io.galileostd.sumeh.spark.SparkValidator]] analyzers, so no extra scan or UDF is introduced.
+ * columns it also measures min/max/mean/std/sum. The profiler calls the engine analyzers directly — it wants metrics,
+ * not PASS/FAIL verdicts — so no constraint or `_dq_errors` annotation is involved.
  */
 object SparkProfiler {
 
@@ -126,9 +126,9 @@ object SparkProfiler {
   /**
    * Profiles a DataFrame.
    *
-   * Builds a rule set from the DataFrame schema — `is_complete` + `has_cardinality` for every column, plus
-   * `has_min`/`has_max`/`has_mean`/`has_std`/`has_sum` for numeric columns — and runs them through
-   * [[io.galileostd.sumeh.spark.SparkValidator]] in one pass.
+   * Computes the row count once and then, for every column, invokes the engine analyzers directly (`is_complete` and
+   * `has_cardinality` for all columns; `has_min`/`has_max`/`has_mean`/`has_std`/`has_sum` for numeric ones) to read
+   * their metric values. No constraint or report is involved — the profiler wants numbers, not verdicts.
    *
    * Args: df: The DataFrame to profile. sampleFraction: Optional fraction in `(0.0, 1.0)` to sample (with a fixed seed)
    * before profiling.
@@ -141,40 +141,17 @@ object SparkProfiler {
       case _                             => df
     }
 
-    val fields = target.schema.fields
-
-    val rules = fields.flatMap {
-      f =>
-        val base = Seq(
-          RuleDefinition.validated(Left(f.name), "is_complete"),
-          RuleDefinition.validated(Left(f.name), "has_cardinality")
-        )
-        if (isNumeric(f)) {
-          base ++ Seq(
-            RuleDefinition.validated(Left(f.name), "has_min"),
-            RuleDefinition.validated(Left(f.name), "has_max"),
-            RuleDefinition.validated(Left(f.name), "has_mean"),
-            RuleDefinition.validated(Left(f.name), "has_std"),
-            RuleDefinition.validated(Left(f.name), "has_sum")
-          )
-        } else base
-    }
-
+    val fields    = target.schema.fields
+    val totalRows = target.count()
     val startTime = System.currentTimeMillis()
-    val report    = SparkValidator.validate(target, rules)
-    val elapsedMs = (System.currentTimeMillis() - startTime).toDouble
 
-    val profiles = fields.map {
-      f =>
-        val colResults = report.results.filter(_.fieldName == f.name)
-        f.name -> buildProfile(f, colResults, report.totalRows)
-    }.toMap
+    val profiles = fields.map(f => f.name -> buildProfile(f, target, totalRows)).toMap
 
     ProfileReport(
       tableStats = Map(
-        "total_rows"        -> report.totalRows,
+        "total_rows"        -> totalRows,
         "columns_count"     -> fields.length.toLong,
-        "execution_time_ms" -> elapsedMs
+        "execution_time_ms" -> (System.currentTimeMillis() - startTime).toDouble
       ),
       columnProfiles = profiles
     )
@@ -191,26 +168,42 @@ object SparkProfiler {
     numericTypes.contains(f.dataType) || f.dataType.isInstanceOf[DecimalType]
 
   /**
-   * Assembles a [[ColumnProfile]] from the per-column validation results.
+   * Assembles a [[ColumnProfile]] for one column by calling the analyzers directly.
    *
-   * Picks the `is_complete` and `has_cardinality` values (plus the numeric stats) out of the rule results and derives
-   * `nullCount` and `uniqueness`.
+   * Completeness comes from `is_complete`'s metric, cardinality from `has_cardinality`'s; numeric columns additionally
+   * read min/max/mean/std/sum. An analyzer that rejects the column (e.g. `has_min` on a string column) yields `None`
+   * for that stat instead of failing the whole profile.
    *
-   * Args: field: The schema field. results: The validation results for this column. totalRows: Total rows profiled.
+   * Args: field: The schema field. df: The DataFrame to measure. totalRows: Total rows (already counted).
    *
    * Returns: The column profile.
    */
   private def buildProfile(
       field: StructField,
-      results: Seq[ValidationResult],
+      df: DataFrame,
       totalRows: Long
   ): ColumnProfile = {
-    val byCheck = results.flatMap(r => r.actualValue.map(r.checkType -> _)).toMap
+    def metricValue(checkType: String): Option[Double] = {
+      val rule = RuleDefinition.validated(Left(field.name), checkType)
+      try Some(SparkRegistry.getAnalyzer(checkType).analyze(df, rule).value)
+      catch { case _: IllegalArgumentException => None }
+    }
 
-    val completeness = byCheck.getOrElse("is_complete", 1.0)
-    val distinct     = byCheck.getOrElse("has_cardinality", 0.0)
+    val completeness = metricValue("is_complete").getOrElse(1.0)
+    val distinct     = metricValue("has_cardinality").getOrElse(0.0)
     val nullCount    = math.round(totalRows * (1.0 - completeness))
     val uniqueness   = if (totalRows > 0) distinct / totalRows else 0.0
+
+    val (min, max, mean, stdDev, sum) =
+      if (isNumeric(field))
+        (
+          metricValue("has_min"),
+          metricValue("has_max"),
+          metricValue("has_mean"),
+          metricValue("has_std"),
+          metricValue("has_sum")
+        )
+      else (None, None, None, None, None)
 
     ColumnProfile(
       `type` = field.dataType.typeName,
@@ -220,11 +213,11 @@ object SparkProfiler {
       distinctCount = distinct.toLong,
       nullCount = nullCount,
       uniqueness = uniqueness,
-      min = byCheck.get("has_min"),
-      max = byCheck.get("has_max"),
-      mean = byCheck.get("has_mean"),
-      stdDev = byCheck.get("has_std"),
-      sum = byCheck.get("has_sum")
+      min = min,
+      max = max,
+      mean = mean,
+      stdDev = stdDev,
+      sum = sum
     )
   }
 }

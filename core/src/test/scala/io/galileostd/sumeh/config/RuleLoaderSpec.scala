@@ -90,13 +90,19 @@ class RuleLoaderSpec extends AnyWordSpec with Matchers {
       val back = RuleLoader.fromCsvString(RuleLoader.toCsv(List(r)))
       back.head.value shouldBe r.value
     }
+
+    "round-trip tolerance through CSV" in {
+      val r    = RuleDefinition.validated(Left("age"), "has_sum", value = Some(LongValue(100)), tolerance = 0.05)
+      val back = RuleLoader.fromCsvString(RuleLoader.toCsv(List(r)))
+      back.head.tolerance shouldBe 0.05
+    }
   }
 
   "RuleLoader.toCsv" should {
 
     "emit the expected header" in {
       val csv = RuleLoader.toCsv(List(rule))
-      csv.linesIterator.next() shouldBe "field,check_type,value,threshold,execute,level,category"
+      csv.linesIterator.next() shouldBe "field,check_type,value,threshold,tolerance,execute,level,category"
     }
 
     "emit one line per rule" in {
@@ -216,6 +222,16 @@ class RuleLoaderSpec extends AnyWordSpec with Matchers {
       import upickle.default._
       val arr = read[ujson.Arr](RuleLoader.toJson(List(rule)))
       arr(0).obj("env").str shouldBe "prod"
+    }
+
+    "round-trip tolerance through JSON" in {
+      import upickle.default._
+      val r   = RuleDefinition.validated(Left("age"), "has_sum", value = Some(LongValue(100)), tolerance = 0.05)
+      val arr = read[ujson.Arr](RuleLoader.toJson(List(r)))
+      arr(0).obj("tolerance").num shouldBe 0.05
+
+      val back = RuleLoader.fromJsonString(RuleLoader.toJson(List(r)))
+      back.head.tolerance shouldBe 0.05
     }
   }
 }

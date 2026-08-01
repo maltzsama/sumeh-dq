@@ -18,17 +18,25 @@ import io.galileostd.sumeh.exception.SumehException
  *
  * Args: field: The column name(s) to validate — `Left` for one column, `Right` for several. checkType: The rule type
  * (e.g. `"is_complete"`); must exist in [[RuleRegistry]]. value: Threshold or comparison payload ([[RuleValue]]),
- * depending on the rule type. threshold: Pass-rate threshold in `[0.0, 1.0]`; the rule passes when the measured metric
- * meets it. execute: When `false` the rule is never run and always reported as `SKIPPED`. level: Validation level,
- * `ROW` or `TABLE` — normally auto-populated by the registry. category: Rule category (e.g. `"completeness"`) —
- * normally auto-populated by the registry. updatedAt: When the rule was last changed (parsed from `updated_at`).
- * metadata: Extra keys from the source config, preserved verbatim for round-tripping.
+ * depending on the rule type.
+ *
+ * @param threshold
+ *   minimum fraction of rows that must pass, for ROW-level rules. Ignored for TABLE-level rules.
+ * @param tolerance
+ *   maximum relative error accepted for TABLE-level aggregation rules. 0.0 = exact match. 0.05 = accepts ±5%. Ignored
+ *   for ROW-level rules.
+ *
+ * execute: When `false` the rule is never run and always reported as `SKIPPED`. level: Validation level, `ROW` or
+ * `TABLE` — normally auto-populated by the registry. category: Rule category (e.g. `"completeness"`) — normally
+ * auto-populated by the registry. updatedAt: When the rule was last changed (parsed from `updated_at`). metadata: Extra
+ * keys from the source config, preserved verbatim for round-tripping.
  */
 final case class RuleDefinition(
     field: Either[String, List[String]],
     checkType: String,
     value: Option[RuleValue] = None,
     threshold: Double = 1.0,
+    tolerance: Double = 0.0,
     execute: Boolean = true,
     level: String = "ROW",
     category: String = "unknown",
@@ -107,7 +115,8 @@ object RuleDefinition {
    *
    * Args: field: The column name(s) — `Left` for one, `Right` for several. checkType: The rule type; must exist in the
    * registry. value: Threshold or comparison value for the rule. threshold: Pass-rate threshold in `[0.0, 1.0]`.
-   * execute: `false` to disable the rule. updatedAt: Rule update timestamp. metadata: Extra keys to preserve.
+   * tolerance: Relative tolerance for TABLE-level aggregation rules; `0.0` for exact match. execute: `false` to disable
+   * the rule. updatedAt: Rule update timestamp. metadata: Extra keys to preserve.
    *
    * Returns: A rule with `level`/`category` populated from the registry.
    *
@@ -118,6 +127,7 @@ object RuleDefinition {
       checkType: String,
       value: Option[RuleValue] = None,
       threshold: Double = 1.0,
+      tolerance: Double = 0.0,
       execute: Boolean = true,
       updatedAt: Option[LocalDateTime] = None,
       metadata: Map[String, Any] = Map.empty
@@ -136,6 +146,7 @@ object RuleDefinition {
       checkType = checkType,
       value = value,
       threshold = threshold,
+      tolerance = tolerance,
       execute = execute,
       level = entry.level,
       category = entry.category,
@@ -147,10 +158,11 @@ object RuleDefinition {
   /**
    * Creates a [[RuleDefinition]] from a raw config map.
    *
-   * Parses the known keys (`field`, `check_type`, `value`, `threshold`, `execute`, `level`, `category`, `updated_at`)
-   * and keeps every other key verbatim in `metadata`, so a source config survives a load→export round-trip. Parsing is
-   * lenient: `value` goes through [[parseValue]], `threshold` falls back to `1.0`, `execute` accepts booleans and
-   * truthy strings. The result is passed through [[validated]] for registry validation.
+   * Parses the known keys (`field`, `check_type`, `value`, `threshold`, `tolerance`, `execute`, `level`, `category`,
+   * `updated_at`) and keeps every other key verbatim in `metadata`, so a source config survives a load→export
+   * round-trip. Parsing is lenient: `value` goes through [[parseValue]], `threshold` falls back to `1.0`, `tolerance`
+   * falls back to `0.0`, `execute` accepts booleans and truthy strings. The result is passed through [[validated]] for
+   * registry validation.
    *
    * Args: data: The rule as a key→value map (e.g. a CSV row or JSON object).
    *
@@ -164,6 +176,7 @@ object RuleDefinition {
       "check_type",
       "value",
       "threshold",
+      "tolerance",
       "level",
       "category",
       "execute",
@@ -175,6 +188,8 @@ object RuleDefinition {
     val value = data.get("value").flatMap(parseValue)
 
     val threshold = data.get("threshold").flatMap(v => Try(v.toString.toDouble).toOption).getOrElse(1.0)
+
+    val tolerance = data.get("tolerance").flatMap(v => Try(v.toString.toDouble).toOption).getOrElse(0.0)
 
     val execute = data
       .get("execute")
@@ -201,6 +216,7 @@ object RuleDefinition {
       checkType = checkType,
       value = value,
       threshold = threshold,
+      tolerance = tolerance,
       execute = execute,
       updatedAt = updatedAt,
       metadata = metadata

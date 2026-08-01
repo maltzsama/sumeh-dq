@@ -680,14 +680,22 @@ object AggregationAnalyzer extends SparkAnalyzer {
 
     val value = actual match {
       case n: Number => n.doubleValue()
-      case _         => 0.0
+      case null =>
+        throw new IllegalArgumentException(
+          s"${rule.checkType} on '${fieldName(rule)}': aggregation returned null (empty or all-null column)"
+        )
+      case other =>
+        throw new IllegalArgumentException(
+          s"${rule.checkType} not applicable to column '${fieldName(rule)}': " +
+            s"non-numeric result (${other.getClass.getSimpleName})"
+        )
     }
 
     MetricResult(
       metricType = "aggregation",
       field = rule.field,
       value = value,
-      totalRows = df.count(),
+      totalRows = -1L, // profiler computes row count itself; no extra count() job here
       metadata = Map("metric" -> checkType, "value" -> value)
     )
   }

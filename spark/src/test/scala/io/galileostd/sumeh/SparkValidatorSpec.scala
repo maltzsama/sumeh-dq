@@ -764,7 +764,7 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
     "pass has_std within relative tolerance" in {
       import io.galileostd.sumeh.rule.DoubleValue
       val rules =
-        Seq(RuleDefinition.validated(Left("age"), "has_std", value = Some(DoubleValue(8.9)), threshold = 0.01))
+        Seq(RuleDefinition.validated(Left("age"), "has_std", value = Some(DoubleValue(8.9)), tolerance = 0.01))
       val report = SparkValidator.validate(dfBasic, rules)
       report.results.head.status shouldBe ValidationStatus.PASS
       report.results.head.actualValue.get should be > 8.9
@@ -775,7 +775,7 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       import io.galileostd.sumeh.rule.DoubleValue
       val rules =
         Seq(
-          RuleDefinition.validated(Left("category"), "has_entropy", value = Some(DoubleValue(1.0)), threshold = 0.001)
+          RuleDefinition.validated(Left("category"), "has_entropy", value = Some(DoubleValue(1.0)), tolerance = 0.001)
         )
       val report = SparkValidator.validate(dfUniform, rules)
       report.results.head.status shouldBe ValidationStatus.PASS
@@ -785,7 +785,7 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
     "fail has_entropy on a wrong expected value" in {
       import io.galileostd.sumeh.rule.DoubleValue
       val rules =
-        Seq(RuleDefinition.validated(Left("category"), "has_entropy", value = Some(DoubleValue(0.5)), threshold = 0.0))
+        Seq(RuleDefinition.validated(Left("category"), "has_entropy", value = Some(DoubleValue(0.5)), tolerance = 0.0))
       val report = SparkValidator.validate(dfUniform, rules)
       report.results.head.status shouldBe ValidationStatus.FAIL
     }
@@ -793,7 +793,7 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
     "pass has_infogain for a uniform column (normalized H = 1.0)" in {
       import io.galileostd.sumeh.rule.DoubleValue
       val rules = Seq(
-        RuleDefinition.validated(Left("category"), "has_infogain", value = Some(DoubleValue(1.0)), threshold = 0.001)
+        RuleDefinition.validated(Left("category"), "has_infogain", value = Some(DoubleValue(1.0)), tolerance = 0.001)
       )
       val report = SparkValidator.validate(dfUniform, rules)
       report.results.head.status shouldBe ValidationStatus.PASS
@@ -803,11 +803,57 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
     "pass has_infogain for a constant column (H / log2(n) = 0.0)" in {
       import io.galileostd.sumeh.rule.DoubleValue
       val rules = Seq(
-        RuleDefinition.validated(Left("category"), "has_infogain", value = Some(DoubleValue(0.0)), threshold = 0.0)
+        RuleDefinition.validated(Left("category"), "has_infogain", value = Some(DoubleValue(0.0)), tolerance = 0.0)
       )
       val report = SparkValidator.validate(dfConstant, rules)
       report.results.head.status shouldBe ValidationStatus.PASS
       report.results.head.actualValue.get shouldBe 0.0 +- 1e-9
+    }
+
+    "produce ERROR when has_min has no expected value" in {
+      val rules  = Seq(RuleDefinition.validated(Left("age"), "has_min"))
+      val report = SparkValidator.validate(dfBasic, rules)
+      report.results.head.status shouldBe ValidationStatus.ERROR
+    }
+
+    "compare exactly when tolerance is 0" in {
+      import io.galileostd.sumeh.rule.LongValue
+      val df = spark.createDataFrame(
+        spark.sparkContext.parallelize(Seq(Row(100), Row(1))),
+        StructType(Seq(StructField("amount", IntegerType, nullable = true)))
+      )
+      val rules =
+        Seq(RuleDefinition.validated(Left("amount"), "has_sum", value = Some(LongValue(100)), tolerance = 0.0))
+      val report = SparkValidator.validate(df, rules)
+      report.results.head.status shouldBe ValidationStatus.FAIL
+    }
+
+    "accept deviation within the tolerance" in {
+      import io.galileostd.sumeh.rule.LongValue
+      val df = spark.createDataFrame(
+        spark.sparkContext.parallelize(Seq(Row(100), Row(3))),
+        StructType(Seq(StructField("amount", IntegerType, nullable = true)))
+      )
+      // sum = 103; expected 100 with ±5% tolerance → |103-100|/100 = 3% → PASS
+      val pass = Seq(
+        RuleDefinition.validated(Left("amount"), "has_sum", value = Some(LongValue(100)), tolerance = 0.05)
+      )
+      SparkValidator.validate(df, pass).results.head.status shouldBe ValidationStatus.PASS
+
+      // sum = 103; expected 100 with ±2% tolerance → 3% > 2% → FAIL
+      val fail = Seq(
+        RuleDefinition.validated(Left("amount"), "has_sum", value = Some(LongValue(100)), tolerance = 0.02)
+      )
+      SparkValidator.validate(df, fail).results.head.status shouldBe ValidationStatus.FAIL
+    }
+
+    "produce ERROR for has_min on a string column" in {
+      import io.galileostd.sumeh.rule.LongValue
+      val rules = Seq(
+        RuleDefinition.validated(Left("name"), "has_min", value = Some(LongValue(0)), tolerance = 0.0)
+      )
+      val report = SparkValidator.validate(dfBasic, rules)
+      report.results.head.status shouldBe ValidationStatus.ERROR
     }
   }
 

@@ -93,11 +93,12 @@ object RuleLoader {
    * Returns: A CSV string with a header row.
    */
   def toCsv(rules: List[RuleDefinition]): String = {
-    val header = "field,check_type,value,threshold,execute,level,category"
+    val header = "field,check_type,value,threshold,tolerance,execute,level,category"
     val lines = rules.map {
       r =>
         val value     = r.value.map(_.toTaggedString).getOrElse("")
         val threshold = r.threshold.toString
+        val tolerance = r.tolerance.toString
         val execute   = r.execute.toString
         val level     = r.level
         val category  = r.category
@@ -106,6 +107,7 @@ object RuleLoader {
           quoteCsv(r.checkType),
           quoteCsv(value),
           quoteCsv(threshold),
+          quoteCsv(tolerance),
           quoteCsv(execute),
           quoteCsv(level),
           quoteCsv(category)
@@ -132,6 +134,7 @@ object RuleLoader {
           "field"      -> ujson.Str(r.fieldName),
           "check_type" -> ujson.Str(r.checkType),
           "threshold"  -> ujson.Num(r.threshold),
+          "tolerance"  -> ujson.Num(r.tolerance),
           "execute"    -> ujson.Bool(r.execute),
           "level"      -> ujson.Str(r.level),
           "category"   -> ujson.Str(r.category)

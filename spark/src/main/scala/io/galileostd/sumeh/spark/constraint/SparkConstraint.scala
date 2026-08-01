@@ -148,9 +148,13 @@ object GenericConstraint extends SparkConstraint {
 /**
  * Constraint for TABLE-level aggregations.
  *
- * Compares the measured aggregation to the rule's expected `value`, passing when they are equal (or, when
- * `rule.threshold > 0`, within a relative tolerance `|actual - expected| / expected <= threshold`). An expected value
- * of `0` requires exact equality.
+ * Compares the measured aggregation to the rule's expected `value`, which must be numeric. With `rule.tolerance == 0.0`
+ * the comparison is exact. With `tolerance > 0`, a non-zero expected value accepts a relative error `|actual -
+ * expected| / |expected| <= tolerance`; an expected value of `0` treats `tolerance` as an *absolute* bound on
+ * `|actual|` (division by zero is impossible).
+ *
+ * A rule without a numeric `value` throws [[IllegalArgumentException]] — the caller turns that into an ERROR result, so
+ * a misconfigured TABLE-level rule is reported instead of silently passing.
  */
 object AggregationConstraint extends SparkConstraint {
 
@@ -158,22 +162,28 @@ object AggregationConstraint extends SparkConstraint {
    * Compares an aggregation metric against the rule's expected value.
    *
    * Args: metric: An aggregation metric (value = the aggregated number). rule: The rule carrying the expected `value`
-   * and relative `threshold`.
+   * and relative `tolerance`.
    *
    * Returns: PASS when the measured value matches the expectation within tolerance, otherwise FAIL.
+   *
+   * Throws: IllegalArgumentException when `value` is missing or not numeric.
    */
   def check(metric: MetricResult, rule: RuleDefinition): ValidationResult = {
-    val expected = rule.value.collect {
-      case io.galileostd.sumeh.rule.DoubleValue(d) => d
-      case io.galileostd.sumeh.rule.LongValue(l)   => l.toDouble
-    }
+    val expected = rule.value
+      .collect {
+        case io.galileostd.sumeh.rule.DoubleValue(d) => d
+        case io.galileostd.sumeh.rule.LongValue(l)   => l.toDouble
+      }
+      .getOrElse(
+        throw new IllegalArgumentException(
+          s"${rule.checkType} requires a numeric value in 'value' (received: ${rule.value})"
+        )
+      )
 
-    val passed = expected.forall {
-      exp =>
-        if (exp == 0) metric.value == exp
-        else if (rule.threshold > 0) Math.abs(metric.value - exp) / exp <= rule.threshold
-        else metric.value == exp
-    }
+    val passed =
+      if (rule.tolerance <= 0.0) metric.value == expected
+      else if (expected == 0.0) math.abs(metric.value) <= rule.tolerance
+      else math.abs(metric.value - expected) / math.abs(expected) <= rule.tolerance
 
     ValidationResult(
       id = UUID.randomUUID().toString,
@@ -185,7 +195,7 @@ object AggregationConstraint extends SparkConstraint {
       actualValue = Some(metric.value),
       message =
         if (passed) None
-        else Some(s"${rule.checkType}: expected ${expected.getOrElse("?")} but got ${metric.value}"),
+        else Some(s"${rule.checkType}: expected $expected but got ${metric.value}"),
       metadata = metric.metadata
     )
   }
