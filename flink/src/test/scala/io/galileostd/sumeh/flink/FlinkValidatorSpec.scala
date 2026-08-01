@@ -183,6 +183,24 @@ class FlinkValidatorSpec extends AnyWordSpec with Matchers {
       json should include("\"field\":\"age\"")
     }
 
+    "throw at job construction when is_between has no list value" in {
+      val stream = streamOf(positionalRow(1, "alice", 30))
+      val bad    = RuleDefinition.validated(Left("age"), "is_between")
+      an[IllegalArgumentException] should be thrownBy FlinkValidator.validate(stream, Seq(bad))
+    }
+
+    "not validate the value of rules that will be skipped" in {
+      val stream = streamOf(positionalRow(1, "alice", 30))
+      val rules = Seq(
+        RuleDefinition.validated(Left("age"), "has_mean"), // TABLE-level, no value needed
+        RuleDefinition.validated(Left("name"), "is_complete")
+      )
+      noException should be thrownBy FlinkValidator.validate(stream, rules)
+
+      val validated = FlinkValidator.validate(stream, rules)
+      validated.split()._1.executeAndCollect(10).asScala should have size 1
+    }
+
     "apply the correct regex when there are two different has_pattern rules" in {
       val emailType = new RowTypeInfo(
         Array[TypeInformation[_]](Types.STRING, Types.STRING),

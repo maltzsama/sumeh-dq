@@ -47,6 +47,8 @@ object FlinkValidator {
         )
     }
 
+    DQProcessFunction.validateRules(rules)
+
     val fieldNames = inType.getFieldNames // Array[String], in positional order
     val fieldTypes = inType.getFieldTypes // Array[TypeInformation[_]]
 

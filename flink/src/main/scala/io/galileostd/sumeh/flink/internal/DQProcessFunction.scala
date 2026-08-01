@@ -141,6 +141,42 @@ private[flink] object DQProcessFunction {
   }
 
   /**
+   * Extracts and validates everything that depends on `value`, once, at job construction.
+   *
+   * Throws on the first malformed rule, so a configuration error surfaces before the job is submitted instead of one
+   * error per record at runtime. Rules that will be skipped anyway (execute=false, wrong level, unsupported engine) are
+   * not validated — there is no point failing the job over a rule that never runs.
+   *
+   * Args: rules: The rules to validate.
+   *
+   * Throws: IllegalArgumentException on the first rule with a missing or wrong-typed `value`.
+   */
+  private[flink] def validateRules(rules: Seq[RuleDefinition]): Unit =
+    rules.foreach {
+      rule =>
+        if (rule.isApplicableForLevel("ROW") && rule.skipReason("ROW", "flink-streaming").isEmpty)
+          RuleRegistry.canonical(rule.checkType) match {
+            case "has_pattern" =>
+              java.util.regex.Pattern.compile(requireString(rule, "has_pattern requires a regex pattern"))
+            case "is_between" =>
+              requirePair(rule, "is_between requires value=[min, max]")
+            case "is_date_between" =>
+              requirePair(rule, "is_date_between requires value=[start, end]")
+            case "is_contained_in" | "not_contained_in" =>
+              requireList(rule, s"${rule.checkType} requires a list of values")
+            case "is_equal_than" =>
+              requireString(rule, "is_equal_than requires a column name as value")
+            case "is_date_after" =>
+              requireString(rule, "is_date_after requires a date value")
+            case "is_date_before" =>
+              requireString(rule, "is_date_before requires a date value")
+            case "validate_date_format" =>
+              requireString(rule, "validate_date_format requires a format string as value")
+            case _ => ()
+          }
+    }
+
+  /**
    * Serializes error entries as a JSON array string, matching the Spark `_dq_errors` struct fields.
    *
    * Args: errors: The error entries for a record.
