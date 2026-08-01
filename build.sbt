@@ -15,9 +15,7 @@ ThisBuild / developers := List(
 
 ThisBuild / Test / parallelExecution := false
 
-// Dependencies (e.g. upickle 4.x) pull scala-library 2.13.16; allow the newer
-// lib on the classpath while compiling with 2.13.14 (SIP-51 escape hatch).
-ThisBuild / allowUnsafeScalaLibUpgrade := true
+// Dependencies (e.g. upickle 4.x) require scala-library 2.13.16, so we compile with it too.
 
 // Publishing to GitHub Packages (https://maven.pkg.github.com/maltzsama/sumeh-dq).
 // Only used in CI on release events; the version is set via -Dversion=X.Y.Z from the release tag.
@@ -32,8 +30,8 @@ ThisBuild / credentials += Credentials(
 lazy val core = (project in file("core"))
   .settings(
     name               := "sumeh-core",
-    scalaVersion       := "2.13.14",
-    crossScalaVersions := Seq("2.12.18", "2.13.14"),
+    scalaVersion       := "2.13.16",
+    crossScalaVersions := Seq("2.12.18", "2.13.16"),
     libraryDependencies ++= Seq(
       "com.lihaoyi"   %% "upickle"   % "4.4.3",
       "org.slf4j"      % "slf4j-api" % "2.0.18",
@@ -47,11 +45,11 @@ lazy val spark = (project in file("spark"))
   .dependsOn(core)
   .settings(
     name         := "sumeh-spark",
-    scalaVersion := "2.13.14",
+    scalaVersion := "2.13.16",
     sparkVersion := sys.props.getOrElse("spark.version", "4.1.2"),
     crossScalaVersions := {
-      if (sparkVersion.value.startsWith("3.")) Seq("2.12.18", "2.13.14")
-      else Seq("2.13.14")
+      if (sparkVersion.value.startsWith("3.")) Seq("2.12.18", "2.13.16")
+      else Seq("2.13.16")
     },
     libraryDependencies ++= Seq(
       "org.apache.spark" %% "spark-sql"  % sparkVersion.value % Provided,
@@ -82,15 +80,17 @@ lazy val flink = (project in file("flink"))
   .dependsOn(core)
   .settings(
     name               := "sumeh-flink",
-    scalaVersion       := "2.13.14",
-    crossScalaVersions := Seq("2.12.18", "2.13.14"),
+    scalaVersion       := "2.13.16",
+    crossScalaVersions := Seq("2.12.18", "2.13.16"),
     flinkVersion       := sys.props.getOrElse("flink.version", "2.2.0"),
     libraryDependencies ++= Seq(
       "org.apache.flink" % "flink-streaming-java" % flinkVersion.value % Provided,
       "org.apache.flink" % "flink-table-api-java"  % flinkVersion.value % Provided,
       "org.apache.flink" % "flink-table-api-java-bridge" % flinkVersion.value % Provided,
+      "org.apache.flink" % "flink-clients"        % flinkVersion.value % Test,
       "org.scalatest"   %% "scalatest"            % "3.2.17" % Test
-    )
+    ),
+    Test / fork := true
   )
 
 lazy val root = (project in file("."))

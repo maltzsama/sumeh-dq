@@ -114,5 +114,22 @@ class SparkStreamingSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       bq.stop()
       spark.sql("select * from dq_bad").count() shouldBe 2
     }
+
+    "not fail a stream on unparseable dates (Spark 4 ANSI)" in {
+      val report = SparkValidator.validate(
+        streamOf(writeRows(rows: _*)),
+        Seq(RuleDefinition.validated(Left("dt"), "is_past_date"))
+      )
+
+      val q = report.dfValidated.get.toNative.writeStream
+        .format("memory")
+        .queryName("dq_date_out")
+        .outputMode("append")
+        .start()
+      q.processAllAvailable()
+      q.stop()
+
+      spark.sql("select * from dq_date_out").count() shouldBe 3
+    }
   }
 }

@@ -308,6 +308,42 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       val report = SparkValidator.validate(dfDates, rules)
       report.results.head.actualValue.get should be > 0.0
     }
+
+    "not throw on unparseable dates (Spark 4 ANSI)" in {
+      val df = spark.createDataFrame(
+        spark.sparkContext.parallelize(
+          Seq(Row("2024-05-06"), Row("not-a-date"), Row("2024/05/06"), Row("2099-01-01"))
+        ),
+        StructType(Seq(StructField("dt", StringType, nullable = true)))
+      )
+      val rules  = Seq(RuleDefinition.validated(Left("dt"), "is_past_date", threshold = 1.0))
+      val report = SparkValidator.validate(df, rules)
+      report.results.head.status shouldBe ValidationStatus.FAIL
+      val (good, bad) = report.split()
+      good.count() shouldBe 3 // past + unparseable rows are not failures
+      bad.count() shouldBe 1  // only the future date fails
+    }
+
+    "fail validate_date_format on malformed strings" in {
+      import io.galileostd.sumeh.rule.StringValue
+      val df = spark.createDataFrame(
+        spark.sparkContext.parallelize(
+          Seq(Row("2024-05-06"), Row("2024/05/06"), Row("abc"))
+        ),
+        StructType(Seq(StructField("dt", StringType, nullable = true)))
+      )
+      val rules = Seq(
+        RuleDefinition.validated(
+          Left("dt"),
+          "validate_date_format",
+          value = Some(StringValue("yyyy-MM-dd")),
+          threshold = 1.0
+        )
+      )
+      val report = SparkValidator.validate(df, rules)
+      report.results.head.status shouldBe ValidationStatus.FAIL
+      report.split()._2.count() shouldBe 2
+    }
   }
 
   // -------------------------------------------------------------------------

@@ -2,6 +2,7 @@ package io.galileostd.sumeh.spark.analyzer
 
 import io.galileostd.sumeh.metric.MetricResult
 import io.galileostd.sumeh.rule.{ DoubleValue, ListValue, LongValue, RuleDefinition, RuleValue, StringValue }
+import io.galileostd.sumeh.spark.DateExpr
 import org.apache.spark.sql.{ functions => F, DataFrame }
 
 // ============================================================================
@@ -356,7 +357,7 @@ object DateAnalyzer extends SparkAnalyzer {
     val checkType = rule.checkType
     requireField(df, field)
 
-    val dateCol = F.to_date(F.col(field))
+    val dateCol = DateExpr.safeToDate(F.col(field))
     val today   = F.current_date()
 
     val failCond = checkType match {
@@ -408,7 +409,7 @@ object DateBetweenAnalyzer extends SparkAnalyzer {
       case _ => throw new IllegalArgumentException("is_date_between requires value=[start, end]")
     }
 
-    val dateCol  = F.to_date(F.col(field))
+    val dateCol  = DateExpr.safeToDate(F.col(field))
     val failCond = (dateCol < F.to_date(F.lit(start))) || (dateCol > F.to_date(F.lit(end)))
 
     val result = df
@@ -440,7 +441,7 @@ object DateComparisonAnalyzer extends SparkAnalyzer {
       .getOrElse(throw new IllegalArgumentException(s"$checkType requires a date value"))
     requireField(df, field)
 
-    val dateCol    = F.to_date(F.col(field))
+    val dateCol    = DateExpr.safeToDate(F.col(field))
     val targetDate = F.to_date(F.lit(target))
 
     val failCond = checkType match {

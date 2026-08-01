@@ -272,37 +272,37 @@ object SparkValidator {
         F.col(field).isNull || (F.trim(F.col(field)) === "")
 
       // Date
-      case "is_today"                      => F.to_date(F.col(field)) =!= F.current_date()
-      case "is_t_minus_1" | "is_yesterday" => F.to_date(F.col(field)) =!= F.date_sub(F.current_date(), 1)
-      case "is_t_minus_2"                  => F.to_date(F.col(field)) =!= F.date_sub(F.current_date(), 2)
-      case "is_t_minus_3"                  => F.to_date(F.col(field)) =!= F.date_sub(F.current_date(), 3)
-      case "is_past_date"                  => F.to_date(F.col(field)) >= F.current_date()
-      case "is_future_date"                => F.to_date(F.col(field)) <= F.current_date()
-      case "is_on_weekday"                 => F.dayofweek(F.to_date(F.col(field))).isin(1, 7)
-      case "is_on_weekend"                 => !F.dayofweek(F.to_date(F.col(field))).isin(1, 7)
-      case "is_on_monday"                  => F.dayofweek(F.to_date(F.col(field))) =!= 2
-      case "is_on_tuesday"                 => F.dayofweek(F.to_date(F.col(field))) =!= 3
-      case "is_on_wednesday"               => F.dayofweek(F.to_date(F.col(field))) =!= 4
-      case "is_on_thursday"                => F.dayofweek(F.to_date(F.col(field))) =!= 5
-      case "is_on_friday"                  => F.dayofweek(F.to_date(F.col(field))) =!= 6
-      case "is_on_saturday"                => F.dayofweek(F.to_date(F.col(field))) =!= 7
-      case "is_on_sunday"                  => F.dayofweek(F.to_date(F.col(field))) =!= 1
+      case "is_today"                      => DateExpr.safeToDate(F.col(field)) =!= F.current_date()
+      case "is_t_minus_1" | "is_yesterday" => DateExpr.safeToDate(F.col(field)) =!= F.date_sub(F.current_date(), 1)
+      case "is_t_minus_2"                  => DateExpr.safeToDate(F.col(field)) =!= F.date_sub(F.current_date(), 2)
+      case "is_t_minus_3"                  => DateExpr.safeToDate(F.col(field)) =!= F.date_sub(F.current_date(), 3)
+      case "is_past_date"                  => DateExpr.safeToDate(F.col(field)) >= F.current_date()
+      case "is_future_date"                => DateExpr.safeToDate(F.col(field)) <= F.current_date()
+      case "is_on_weekday"                 => F.dayofweek(DateExpr.safeToDate(F.col(field))).isin(1, 7)
+      case "is_on_weekend"                 => !F.dayofweek(DateExpr.safeToDate(F.col(field))).isin(1, 7)
+      case "is_on_monday"                  => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 2
+      case "is_on_tuesday"                 => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 3
+      case "is_on_wednesday"               => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 4
+      case "is_on_thursday"                => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 5
+      case "is_on_friday"                  => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 6
+      case "is_on_saturday"                => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 7
+      case "is_on_sunday"                  => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 1
 
       case "is_date_between" =>
         val (start, end) = rule.value match {
           case Some(ListValue(StringValue(s) :: StringValue(e) :: Nil)) => (s, e)
           case _ => throw new IllegalArgumentException("is_date_between requires [start, end]")
         }
-        val dc = F.to_date(F.col(field))
+        val dc = DateExpr.safeToDate(F.col(field))
         (dc < F.to_date(F.lit(start))) || (dc > F.to_date(F.lit(end)))
 
       case "is_date_after" =>
         val target = rule.value.collect { case StringValue(s) => s }.getOrElse("")
-        F.to_date(F.col(field)) <= F.to_date(F.lit(target))
+        DateExpr.safeToDate(F.col(field)) <= F.to_date(F.lit(target))
 
       case "is_date_before" =>
         val target = rule.value.collect { case StringValue(s) => s }.getOrElse("")
-        F.to_date(F.col(field)) >= F.to_date(F.lit(target))
+        DateExpr.safeToDate(F.col(field)) >= F.to_date(F.lit(target))
 
       case "validate_date_format" =>
         val format = rule.value.collect { case StringValue(s) => s }.getOrElse("")

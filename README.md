@@ -324,7 +324,7 @@ Requirements: **JDK 17+**, **sbt 1.11+**.
 sbt test
 
 # Cross-build tests
-sbt -batch "++2.13.14" "test"
+sbt -batch "++2.13.16" "test"
 sbt -batch "++2.12.18" "core/test" "flink/test"
 
 # Spark under Scala 2.12 (Spark 3.x line)
@@ -334,7 +334,7 @@ sbt -batch -Dspark.version=3.5.5 "++2.12.18" "spark/compile"
 sbt scalafmtAll scalafmtCheckAll
 ```
 
-Spark is cross-built as `2.12.18 + 2.13.14` against Spark 3.x, and `2.13.14` against Spark 4.x. Core and Flink are cross-built against both Scala versions.
+Spark is cross-built as `2.12.18 + 2.13.16` against Spark 3.x, and `2.13.16` against Spark 4.x. Core and Flink are cross-built against both Scala versions.
 
 ---
 
