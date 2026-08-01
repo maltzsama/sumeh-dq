@@ -53,6 +53,8 @@ jobs:
           distribution: 'corretto'
           cache: 'sbt'
 
+      - uses: sbt/setup-sbt@v1
+
       - name: Compile ${{ matrix.module }} (Scala ${{ matrix.scala }})
         run: sbt ${{ matrix.opts }} ++${{ matrix.scala }} ${{ matrix.module }}/compile
 
@@ -71,6 +73,8 @@ jobs:
           java-version: '17'
           distribution: 'corretto'
           cache: 'sbt'
+
+      - uses: sbt/setup-sbt@v1
 
       - name: Coverage (all modules) + aggregate report
         run: sbt "coverage" "test" "coverageAggregate" "coverageReport"
@@ -110,6 +114,8 @@ jobs:
           java-version: '17'
           distribution: 'corretto'
           cache: 'sbt'
+
+      - uses: sbt/setup-sbt@v1
 
       - name: Publish to GitHub Packages
         env:
