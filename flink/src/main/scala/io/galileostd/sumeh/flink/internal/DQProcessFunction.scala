@@ -218,7 +218,7 @@ private[flink] object DQProcessFunction {
         }
 
       case "is_equal_than" =>
-        val other = rule.value.collect { case StringValue(s) => s }.getOrElse("")
+        val other = requireString(rule, "is_equal_than requires a column name as value")
         Option(rawValue).map(_.toString).getOrElse("") ==
           Option(values.getOrElse(other, null)).map(_.toString).getOrElse("")
 
@@ -269,16 +269,16 @@ private[flink] object DQProcessFunction {
           case _ => false
         }
       case "is_date_after" =>
-        val target = rule.value.collect { case StringValue(s) => s }.getOrElse("")
+        val target = requireString(rule, "is_date_after requires a date value")
         toDate(rawValue).isAfter(LocalDate.parse(target))
       case "is_date_before" =>
-        val target = rule.value.collect { case StringValue(s) => s }.getOrElse("")
+        val target = requireString(rule, "is_date_before requires a date value")
         toDate(rawValue).isBefore(LocalDate.parse(target))
 
       case "validate_date_format" =>
         if (rawValue == null) true
         else {
-          val format = rule.value.collect { case StringValue(s) => s }.getOrElse("")
+          val format = requireString(rule, "validate_date_format requires a format string as value")
           try {
             LocalDate.parse(rawValue.toString, DateTimeFormatter.ofPattern(format))
             true
