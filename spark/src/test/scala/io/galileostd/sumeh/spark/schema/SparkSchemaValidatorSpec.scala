@@ -140,7 +140,7 @@ class SparkSchemaValidatorSpec extends AnyWordSpec with Matchers with BeforeAndA
       )
       val report = SparkSchemaValidator.validate(df(nullableId), expected)
       report.passed shouldBe false
-      (report.typeErrors should contain).key("id")
+      (report.metadataErrors should contain).key("id")
     }
 
     "flag extra columns when strict" in {
@@ -284,6 +284,73 @@ class SparkSchemaValidatorSpec extends AnyWordSpec with Matchers with BeforeAndA
       val dateSchema = StructType(Seq(StructField("when", DateType)))
       val defn       = SchemaDef(List(col("when", "datetime")))
       SparkSchemaValidator.validate(df(dateSchema), defn).passed shouldBe true
+    }
+
+    "accept Spark native type names in the contract" in {
+      val schema = StructType(
+        Seq(
+          StructField("id", LongType, nullable = true),
+          StructField("price", DoubleType, nullable = true),
+          StructField("created", TimestampType, nullable = true),
+          StructField("name", StringType, nullable = true)
+        )
+      )
+      val defn = SchemaDef(
+        List(
+          col("id", "bigint"),
+          col("price", "double"),
+          col("created", "timestamp"),
+          col("name", "string")
+        )
+      )
+      val report = SparkSchemaValidator.validate(df(schema), defn)
+      report.passed shouldBe true
+    }
+
+    "accept canonical type names in the contract" in {
+      val schema = StructType(
+        Seq(
+          StructField("id", LongType, nullable = true),
+          StructField("price", DoubleType, nullable = true),
+          StructField("created", TimestampType, nullable = true),
+          StructField("name", StringType, nullable = true)
+        )
+      )
+      val defn = SchemaDef(
+        List(
+          col("id", "integer"),
+          col("price", "float"),
+          col("created", "datetime"),
+          col("name", "string")
+        )
+      )
+      val report = SparkSchemaValidator.validate(df(schema), defn)
+      report.passed shouldBe true
+    }
+
+    "report an error when the expected type is unknown" in {
+      val schema = StructType(Seq(StructField("id", LongType, nullable = true)))
+      val defn   = SchemaDef(List(col("id", "inteiro")))
+      val report = SparkSchemaValidator.validate(df(schema), defn)
+      report.passed shouldBe false
+      (report.typeErrors should contain).key("id")
+    }
+
+    "accept varchar(n) and decimal(p,s) in the contract" in {
+      val schema = StructType(
+        Seq(
+          StructField("name", StringType, nullable = true),
+          StructField("price", DecimalType(10, 2), nullable = true)
+        )
+      )
+      val defn = SchemaDef(
+        List(
+          col("name", "varchar(50)"),
+          col("price", "decimal(10,2)")
+        )
+      )
+      val report = SparkSchemaValidator.validate(df(schema), defn)
+      report.passed shouldBe true
     }
   }
 }

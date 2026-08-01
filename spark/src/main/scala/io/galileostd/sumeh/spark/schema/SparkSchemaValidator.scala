@@ -45,7 +45,9 @@ object SparkSchemaValidator {
     "timestamp_ntz" -> "datetime",
     "array"         -> "array",
     "struct"        -> "complex",
-    "map"           -> "complex"
+    "map"           -> "complex",
+    "datetime"      -> "datetime",
+    "complex"       -> "complex"
   )
 
   /**
@@ -88,9 +90,10 @@ object SparkSchemaValidator {
     df.schema.fields.map {
       field =>
         val info = scala.collection.mutable.Map[String, Any](
-          "raw_type" -> field.dataType.typeName,
-          "nullable" -> field.nullable,
-          "comment"  -> (if (field.metadata.contains("comment")) field.metadata.getString("comment") else "")
+          "raw_type"       -> field.dataType.typeName,
+          "canonical_type" -> toCanonical(field.dataType),
+          "nullable"       -> field.nullable,
+          "comment"        -> (if (field.metadata.contains("comment")) field.metadata.getString("comment") else "")
         )
 
         field.dataType match {
@@ -117,9 +120,10 @@ object SparkSchemaValidator {
     st.fields.map {
       f =>
         f.name -> Map[String, Any](
-          "raw_type" -> f.dataType.typeName,
-          "nullable" -> f.nullable,
-          "comment"  -> ""
+          "raw_type"       -> f.dataType.typeName,
+          "canonical_type" -> toCanonical(f.dataType),
+          "nullable"       -> f.nullable,
+          "comment"        -> ""
         )
     }.toMap
 
@@ -182,12 +186,14 @@ object SparkSchemaValidator {
         case Some(actual) =>
           // Type check
           val canonExpected = canonExpectedType(colDef.expectedType)
-          val canonActual = toCanonical(
-            // best-effort: map raw_type string back to DataType for canonical check
-            rawToDataType(actual.getOrElse("raw_type", "").toString)
-          )
+          val canonActual   = actual.getOrElse("canonical_type", "unknown").toString
 
-          if (canonExpected != "unknown" && canonExpected != canonActual) {
+          if (canonExpected == "unknown") {
+            typeErrors(fullPath) = s"Unknown expected type '${colDef.expectedType}'. " +
+              s"Valid: ${typeMap.keys.toList.sorted.mkString(", ")}"
+          } else if (canonActual == "unknown") {
+            typeErrors(fullPath) = s"Spark type '${actual.getOrElse("raw_type", "?")}' has no canonical mapping"
+          } else if (canonExpected != canonActual) {
             typeErrors(fullPath) = s"Expected $canonExpected, got $canonActual (${actual.getOrElse("raw_type", "?")})"
           } else {
             // Element type (array)
@@ -211,7 +217,7 @@ object SparkSchemaValidator {
             // Nullability
             val actualNullable = actual.getOrElse("nullable", true).asInstanceOf[Boolean]
             if (!colDef.nullable && actualNullable)
-              typeErrors(fullPath) = "Schema violation: contract requires NOT NULL but column allows nulls"
+              metadataErrors(fullPath) = "Schema violation: contract requires NOT NULL but column allows nulls"
 
             // Nested fields
             for {
@@ -243,42 +249,16 @@ object SparkSchemaValidator {
   /**
    * Normalizes an expected type so it compares against the canonical actual type.
    *
-   * `struct` and `map` become `complex` (their canonical form); everything else is lowercased as-is.
+   * `varchar(10)`, `decimal(10,2)` etc. are trimmed before the parameter list, then looked up in `typeMap`. Unknown
+   * names return `"unknown"` so the caller can report a misconfigured contract instead of silently skipping the check.
    *
    * Args: t: The contract type string.
    *
-   * Returns: The normalized type.
+   * Returns: The canonical type, or `"unknown"` when not recognized.
    */
   private def canonExpectedType(t: String): String = {
-    val low = t.toLowerCase
-    if (low == "struct" || low == "map") "complex" else low
-  }
-
-  /**
-   * Best-effort mapping of a raw type name (from [[extractSchema]]) back to a Spark [[DataType]].
-   *
-   * Used to re-derive a concrete type so it can be canonicalized and compared. Unknown names fall back to `StringType`.
-   *
-   * Args: raw: The raw type name.
-   *
-   * Returns: A Spark [[DataType]] approximating the raw type.
-   */
-  private def rawToDataType(raw: String): DataType = raw.toLowerCase.trim match {
-    case "byte" | "tinyint"            => ByteType
-    case "short" | "smallint"          => ShortType
-    case "integer" | "int"             => IntegerType
-    case "long" | "bigint"             => LongType
-    case "float"                       => FloatType
-    case "double"                      => DoubleType
-    case s if s.startsWith("decimal")  => DecimalType.SYSTEM_DEFAULT
-    case "string" | "varchar" | "char" => StringType
-    case "binary"                      => BinaryType
-    case "boolean"                     => BooleanType
-    case "date"                        => DateType
-    case "timestamp" | "timestamp_ntz" => TimestampType
-    case s if s.startsWith("array")    => ArrayType(StringType)
-    case s if s.startsWith("struct")   => new StructType()
-    case s if s.startsWith("map")      => MapType(StringType, StringType)
-    case _                             => StringType
+    val low  = t.toLowerCase.trim
+    val base = low.takeWhile(c => c != '(' && c != '<')
+    typeMap.getOrElse(base, "unknown")
   }
 }
