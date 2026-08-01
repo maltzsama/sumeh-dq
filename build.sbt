@@ -27,8 +27,23 @@ lazy val core = (project in file("core"))
 
 lazy val sparkVersion = settingKey[String]("Spark version")
 
+// Publishes a self-contained fat jar (classifier "assembly") alongside the regular jar.
+lazy val assemblyPublishSettings = Seq(
+  Compile / assembly / artifact := {
+    val art = (Compile / assembly / artifact).value
+    art.withClassifier(Some("assembly"))
+  },
+  addArtifact(Compile / assembly / artifact, Compile / assembly),
+  assembly / assemblyMergeStrategy := {
+    case PathList("META-INF", "MANIFEST.MF") => MergeStrategy.discard
+    case PathList("META-INF", xs @ _*)       => MergeStrategy.first
+    case _                                   => MergeStrategy.deduplicate
+  }
+)
+
 lazy val spark = (project in file("spark"))
   .dependsOn(core)
+  .settings(assemblyPublishSettings: _*)
   .settings(
     name         := "sumeh-spark",
     scalaVersion := "2.13.14",
@@ -64,6 +79,7 @@ lazy val flinkVersion = settingKey[String]("Flink version")
 
 lazy val flink = (project in file("flink"))
   .dependsOn(core)
+  .settings(assemblyPublishSettings: _*)
   .settings(
     name               := "sumeh-flink",
     scalaVersion       := "2.13.14",
