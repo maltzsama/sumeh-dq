@@ -3,7 +3,15 @@ package io.galileostd.sumeh.flink.internal
 import java.time.format.DateTimeFormatter
 import java.time.LocalDate
 
-import io.galileostd.sumeh.rule.{ DoubleValue, ListValue, LongValue, RuleDefinition, RuleRegistry, StringValue }
+import io.galileostd.sumeh.rule.{
+  DoubleValue,
+  ListValue,
+  LongValue,
+  RuleDefinition,
+  RuleRegistry,
+  RuleValue,
+  StringValue
+}
 import org.apache.flink.streaming.api.functions.ProcessFunction
 import org.apache.flink.types.Row
 import org.apache.flink.util.{ Collector, OutputTag }
@@ -211,12 +219,9 @@ private[flink] object DQProcessFunction {
       case "is_less_or_equal_than" =>
         toDouble(rawValue) <= ruleValueToDouble(rule.value)
       case "is_between" =>
-        rule.value match {
-          case Some(ListValue(lo :: hi :: Nil)) =>
-            val v = toDouble(rawValue)
-            v >= ruleValueToDouble(Some(lo)) && v <= ruleValueToDouble(Some(hi))
-          case _ => false
-        }
+        val (lo, hi) = requirePair(rule, "is_between requires value=[min, max]")
+        val v        = toDouble(rawValue)
+        v >= ruleValueToDouble(Some(lo)) && v <= ruleValueToDouble(Some(hi))
 
       case "is_equal_than" =>
         val other = requireString(rule, "is_equal_than requires a column name as value")
@@ -225,10 +230,10 @@ private[flink] object DQProcessFunction {
 
       // Membership
       case "is_contained_in" =>
-        val vals = listValuesAsString(rule.value)
+        val vals = listValuesAsString(rule)
         vals.contains(rawValue.toString)
       case "not_contained_in" =>
-        val vals = listValuesAsString(rule.value)
+        val vals = listValuesAsString(rule)
         !vals.contains(rawValue.toString)
 
       // Pattern
@@ -261,12 +266,13 @@ private[flink] object DQProcessFunction {
       case "is_on_saturday"  => toDate(rawValue).getDayOfWeek.getValue == 6
       case "is_on_sunday"    => toDate(rawValue).getDayOfWeek.getValue == 7
       case "is_date_between" =>
-        rule.value match {
-          case Some(ListValue(StringValue(s) :: StringValue(e) :: Nil)) =>
-            val d = toDate(rawValue)
-            !d.isBefore(LocalDate.parse(s)) && !d.isAfter(LocalDate.parse(e))
-          case _ => false
+        val (start, end) = requirePair(rule, "is_date_between requires value=[start, end]") match {
+          case (StringValue(s), StringValue(e)) => (s, e)
+          case _ =>
+            throw new IllegalArgumentException("is_date_between requires [start, end] date strings")
         }
+        val d = toDate(rawValue)
+        !d.isBefore(LocalDate.parse(start)) && !d.isAfter(LocalDate.parse(end))
       case "is_date_after" =>
         val target = requireString(rule, "is_date_after requires a date value")
         toDate(rawValue).isAfter(LocalDate.parse(target))
@@ -304,6 +310,35 @@ private[flink] object DQProcessFunction {
     rule.value
       .collect { case StringValue(s) => s }
       .getOrElse(throw new IllegalArgumentException(msg))
+
+  /**
+   * Extracts the list value of a rule, throwing when absent.
+   *
+   * Args: rule: The rule. msg: The error message when the value is missing.
+   *
+   * Returns: The `ListValue` items.
+   *
+   * Throws: IllegalArgumentException when `value` is missing or not a list.
+   */
+  private[flink] def requireList(rule: RuleDefinition, msg: String): List[RuleValue] =
+    rule.value
+      .collect { case ListValue(items) => items }
+      .getOrElse(throw new IllegalArgumentException(msg))
+
+  /**
+   * Extracts a `(lo, hi)` pair from the rule's list value, throwing when absent.
+   *
+   * Args: rule: The rule. msg: The error message when the value is absent.
+   *
+   * Returns: The two items of the `ListValue`.
+   *
+   * Throws: IllegalArgumentException when `value` is missing or is not a two-element list.
+   */
+  private[flink] def requirePair(rule: RuleDefinition, msg: String): (RuleValue, RuleValue) =
+    rule.value match {
+      case Some(ListValue(lo :: hi :: Nil)) => (lo, hi)
+      case _                                => throw new IllegalArgumentException(msg)
+    }
 
   /**
    * Builds a structured error entry for a failed rule.
@@ -387,18 +422,17 @@ private[flink] object DQProcessFunction {
   /**
    * Extracts the string forms of a ListValue for membership checks.
    *
-   * Args: v: The optional RuleValue holding the membership list.
+   * Args: rule: The rule holding the membership list.
    *
-   * Returns: A Set of the string forms of every item, or an empty Set when `v` is not a ListValue.
+   * Returns: A Set of the string forms of every item.
+   *
+   * Throws: IllegalArgumentException when `value` is missing or not a list.
    */
-  private def listValuesAsString(v: Option[io.galileostd.sumeh.rule.RuleValue]): Set[String] = v match {
-    case Some(ListValue(items)) =>
-      items.map {
-        case StringValue(s) => s
-        case LongValue(l)   => l.toString
-        case DoubleValue(d) => d.toString
-        case other          => other.toString
-      }.toSet
-    case _ => Set.empty
-  }
+  private def listValuesAsString(rule: RuleDefinition): Set[String] =
+    requireList(rule, s"${rule.checkType} requires a list of values").map {
+      case StringValue(s) => s
+      case LongValue(l)   => l.toString
+      case DoubleValue(d) => d.toString
+      case other          => other.toString
+    }.toSet
 }
