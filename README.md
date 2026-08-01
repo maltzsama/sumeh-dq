@@ -40,20 +40,28 @@ flowchart LR
 | Module | Artifact | What it does |
 |--------|----------|--------------|
 | `core` | `sumeh-core` | Rule model, registry, loaders (JSON/CSV), validation model & report, schema models — **engine agnostic** |
-| `spark` | `sumeh-spark` | `SparkValidator` — column-vectorized validation on `DataFrame`, zero `collect()` on row data |
-| `flink` | `sumeh-flink` | `FlinkValidator` — `DataStream[Row]` processing with side-output bifurcation |
+| `spark` | `sumeh-spark-3.5` / `sumeh-spark-4.x` | `SparkValidator` — column-vectorized validation on `DataFrame`, zero `collect()` on row data. Artifact name carries the engine `major.minor` |
+| `flink` | `sumeh-flink-1.20` / `sumeh-flink-2.x` | `FlinkValidator` — `DataStream[Row]` processing with side-output bifurcation. Artifact name carries the engine `major.minor` |
 
 `core` has **no runtime dependencies** beyond `upickle` — it is pure data and logic.
 
 ### Supported matrix
 
-| Artifact | Engine | Scala |
-|----------|--------|-------|
-| `sumeh-core` | — | 2.12, 2.13 |
-| `sumeh-spark` | Spark 3.5+ / 4.x | 2.12, 2.13 |
-| `sumeh-flink` | Flink 1.20+ / 2.x | 2.12, 2.13 |
+Each engine artifact is compiled against the exact version in its name and published separately. The CI matrix exercises every engine version against the same source. The Spark floor is **3.5**, not 3.0: `DateExpr` relies on `try_to_timestamp`, which does not exist before Spark 3.5.
 
-Each artifact is **compiled against its engine floor** (Spark 3.5.0, Flink 1.20.0) and runs on any newer engine version via binary compatibility — no engine-major suffix in the artifact name. The CI matrix exercises every engine version against the same source: Spark 3.5.0 / 4.0.0 / 4.1.0 / 4.2.0 and Flink 1.20.0 / 2.1.0 / 2.2.0 / 2.3.0. The Spark floor is **3.5**, not 3.0: `DateExpr` relies on `try_to_timestamp`, which does not exist before Spark 3.5.
+| Artifact | Compiled against | Scala |
+|----------|------------------|-------|
+| `sumeh-core` | — | 2.12, 2.13 |
+| `sumeh-spark-3.5` | Spark 3.5.0 | 2.12, 2.13 |
+| `sumeh-spark-4.0` | Spark 4.0.0 | 2.13 |
+| `sumeh-spark-4.1` | Spark 4.1.0 | 2.13 |
+| `sumeh-spark-4.2` | Spark 4.2.0 | 2.13 |
+| `sumeh-flink-1.20` | Flink 1.20.0 | 2.12, 2.13 |
+| `sumeh-flink-2.1` | Flink 2.1.0 | 2.12, 2.13 |
+| `sumeh-flink-2.2` | Flink 2.2.0 | 2.12, 2.13 |
+| `sumeh-flink-2.3` | Flink 2.3.0 | 2.12, 2.13 |
+
+Pick the artifact matching your engine version. Since the Spark 4.x line only ships Scala 2.13, the `sumeh-spark-4.x` artifacts are 2.13-only; the 3.5 and Flink lines are cross-built for both Scala versions.
 
 ---
 
@@ -67,9 +75,16 @@ Artifacts are published to **GitHub Packages** (`https://maven.pkg.github.com/ma
 resolvers += "GitHub Packages" at "https://maven.pkg.github.com/maltzsama/sumeh-dq"
 
 libraryDependencies ++= Seq(
-  "io.galileostd" %% "sumeh-core"  % "0.1.0",
-  "io.galileostd" %% "sumeh-spark" % "0.1.0", // only if you validate Spark DataFrames
-  "io.galileostd" %% "sumeh-flink" % "0.1.0"  // only if you validate Flink streams
+  "io.galileostd" %% "sumeh-core"        % "0.1.0",
+  // pick the artifact matching your engine version:
+  "io.galileostd" %% "sumeh-spark-3.5"   % "0.1.0", // Spark 3.5
+  "io.galileostd" %% "sumeh-spark-4.0"   % "0.1.0", // Spark 4.0
+  "io.galileostd" %% "sumeh-spark-4.1"   % "0.1.0", // Spark 4.1
+  "io.galileostd" %% "sumeh-spark-4.2"   % "0.1.0", // Spark 4.2
+  "io.galileostd" %% "sumeh-flink-1.20"  % "0.1.0", // Flink 1.20
+  "io.galileostd" %% "sumeh-flink-2.1"   % "0.1.0", // Flink 2.1
+  "io.galileostd" %% "sumeh-flink-2.2"   % "0.1.0", // Flink 2.2
+  "io.galileostd" %% "sumeh-flink-2.3"   % "0.1.0"  // Flink 2.3
 )
 ```
 
@@ -379,7 +394,7 @@ sbt -batch "coverage" "test" "coverageAggregate" "coverageReport"
 sbt scalafmtAll scalafmtCheckAll
 ```
 
-**Engine floors:** `sumeh-spark` is compiled against **Spark 3.5.0** and runs on any newer version (3.5+, 4.x) via binary compatibility; `sumeh-flink` is compiled against **Flink 1.20.0** and runs on 1.20+ / 2.x. Artifacts carry no engine-major suffix — pick the one matching your module. The Spark floor is **3.5**, not 3.0: `DateExpr` relies on `try_to_timestamp`, which does not exist before Spark 3.5. The CI matrix exercises Spark 3.5.0 / 4.0.0 / 4.1.0 / 4.2.0 and Flink 1.20.0 / 2.1.0 / 2.2.0 / 2.3.0 against the same source.
+**Engine floors:** each engine artifact is compiled against the exact version in its name — `sumeh-spark-3.5` against Spark 3.5.0, `sumeh-spark-4.1` against 4.1.0, `sumeh-flink-2.2` against Flink 2.2.0, and so on. The Spark floor is **3.5**, not 3.0: `DateExpr` relies on `try_to_timestamp`, which does not exist before Spark 3.5. The CI matrix exercises Spark 3.5.0 / 4.0.0 / 4.1.0 / 4.2.0 and Flink 1.20.0 / 2.1.0 / 2.2.0 / 2.3.0, and every published artifact is compiled against the version it is tested against.
 
 ---
 

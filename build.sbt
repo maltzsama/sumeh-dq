@@ -74,7 +74,8 @@ lazy val spark = (project in file("spark"))
   .dependsOn(core)
   .settings(
     sparkVersion := sys.props.getOrElse("spark.version", "3.5.0"),
-    name         := "sumeh-spark",
+    name := s"sumeh-spark-${sparkVersion.value.split('.').take(2).mkString(".")}", // sumeh-spark-3.5, sumeh-spark-4.0, ...
+    moduleName   := name.value, // keep the "." in the artifactId (sbt would otherwise turn it into "-")
     scalaVersion := "2.13.16",
     crossScalaVersions := {
       if (sparkVersion.value.startsWith("3.")) Seq("2.12.18", "2.13.16")
@@ -112,8 +113,9 @@ lazy val flinkVersion = settingKey[String]("Flink version")
 lazy val flink = (project in file("flink"))
   .dependsOn(core)
   .settings(
-    flinkVersion       := sys.props.getOrElse("flink.version", "1.20.0"),
-    name               := "sumeh-flink",
+    flinkVersion := sys.props.getOrElse("flink.version", "1.20.0"),
+    name := s"sumeh-flink-${flinkVersion.value.split('.').take(2).mkString(".")}", // sumeh-flink-1.20, sumeh-flink-2.2, ...
+    moduleName         := name.value, // keep the "." in the artifactId (sbt would otherwise turn it into "-")
     scalaVersion       := "2.13.16",
     crossScalaVersions := Seq("2.12.18", "2.13.16"),
     libraryDependencies ++= Seq(

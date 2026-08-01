@@ -166,10 +166,24 @@ jobs:
           GITHUB_PACKAGES: "1"
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
-          # Each artifact is compiled against its engine floor (Spark 3.5.0, Flink 1.20.0)
-          # and cross-built for both Scala versions.
-          sbt -Dversion="$VERSION" ++2.12.18 core/publish spark/publish flink/publish
-          sbt -Dversion="$VERSION" ++2.13.16 core/publish spark/publish flink/publish
+          # Core — both Scala versions
+          sbt -Dversion="$VERSION" ++2.12.18 core/publish
+          sbt -Dversion="$VERSION" ++2.13.16 core/publish
+
+          # Spark 3.5 (sumeh-spark-3.5) — both Scala versions
+          sbt -Dversion="$VERSION" -Dspark.version=3.5.0 ++2.12.18 spark/publish
+          sbt -Dversion="$VERSION" -Dspark.version=3.5.0 ++2.13.16 spark/publish
+
+          # Spark 4.x (sumeh-spark-4.0 / 4.1 / 4.2) — Scala 2.13 only
+          for v in 4.0.0 4.1.0 4.2.0; do
+            sbt -Dversion="$VERSION" -Dspark.version=$v ++2.13.16 spark/publish
+          done
+
+          # Flink 1.20 / 2.1 / 2.2 / 2.3 (sumeh-flink-*) — both Scala versions
+          for v in 1.20.0 2.1.0 2.2.0 2.3.0; do
+            sbt -Dversion="$VERSION" -Dflink.version=$v ++2.12.18 flink/publish
+            sbt -Dversion="$VERSION" -Dflink.version=$v ++2.13.16 flink/publish
+          done
 
   docs-check:
     runs-on: ubuntu-latest
