@@ -172,17 +172,18 @@ final case class ValidationReport[DF](
   /**
    * Number of failing rows for a result, read from its metadata.
    *
-   * Engines report the count under `fail_count` (most rules) or `null_count`/`incomplete_count` (completeness rules);
-   * `0` when absent.
+   * Engines report the count under `fail_count` (most rules), `null_count`/`incomplete_count` (completeness rules), or
+   * `duplicate_count` (uniqueness rules); `0` when absent. A non-numeric value is tolerated and reported as `0` — this
+   * is a report field, not a quality decision, so it must never throw out of `summary()`.
    *
    * Args: r: The validation result.
    *
    * Returns: The failing-row count.
    */
   private def failCountOf(r: ValidationResult): Long =
-    Seq("fail_count", "null_count", "incomplete_count")
+    Seq("fail_count", "null_count", "incomplete_count", "duplicate_count")
       .flatMap(k => r.metadata.get(k))
       .headOption
-      .map(_.toString.toLong)
+      .flatMap(v => scala.util.Try(v.toString.toDouble.toLong).toOption)
       .getOrElse(0L)
 }

@@ -1334,6 +1334,21 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       validation("fail_count") shouldBe 3L
     }
 
+    "report the fail_count for uniqueness rules" in {
+      val df = spark.createDataFrame(
+        spark.sparkContext.parallelize(Seq(Row(1), Row(2), Row(1), Row(3))),
+        StructType(Seq(StructField("id", IntegerType, nullable = true)))
+      )
+      val rules  = Seq(RuleDefinition.validated(Left("id"), "is_unique", threshold = 1.0))
+      val report = SparkValidator.validate(df, rules)
+      val validation = report
+        .summary()("validations")
+        .asInstanceOf[List[_]]
+        .head
+        .asInstanceOf[Map[String, Any]]
+      validation("fail_count") shouldBe 2L
+    }
+
     "expose _dq_skipped in batch output" in {
       val rules = Seq(
         RuleDefinition.validated(Left("id"), "is_unique", execute = false),

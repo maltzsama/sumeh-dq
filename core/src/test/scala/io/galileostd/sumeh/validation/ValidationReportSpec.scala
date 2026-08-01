@@ -107,6 +107,29 @@ class ValidationReportSpec extends AnyWordSpec with Matchers {
       validation("fail_count") shouldBe 0L
     }
 
+    "not break the summary on unexpected metadata" in {
+      val report = ValidationReport[Unit](
+        List(
+          ValidationResult(
+            checkType = "x",
+            field = Left("col"),
+            status = ValidationStatus.FAIL,
+            metadata = Map("fail_count" -> "nao-e-numero")
+          )
+        ),
+        1L,
+        1.0,
+        "spark"
+      )
+      noException should be thrownBy report.summary()
+      val validation = report
+        .summary()("validations")
+        .asInstanceOf[List[_]]
+        .head
+        .asInstanceOf[Map[String, Any]]
+      validation("fail_count") shouldBe 0L
+    }
+
     "expose nullable fields as null" in {
       val report = ValidationReport[Unit](List(result(ValidationStatus.PASS)), 1, 1.0, "spark")
       val validation = report
