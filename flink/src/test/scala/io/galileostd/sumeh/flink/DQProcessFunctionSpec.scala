@@ -203,6 +203,15 @@ class DQProcessFunctionSpec extends AnyWordSpec with Matchers {
       evaluate(base + ("name" -> "Alice!"), rules)._1 should have size 1
     }
 
+    "match has_pattern as a partial search, consistent with Spark rlike" in {
+      val anchored = Seq(RuleDefinition.validated(Left("name"), "has_pattern", value = Some(StringValue("^A"))))
+      evaluate(base + ("name" -> "ABC"), anchored)._1 shouldBe empty // anchors at start
+      evaluate(base + ("name" -> "BAC"), anchored)._1 should have size 1 // A not at start
+
+      val partial = Seq(RuleDefinition.validated(Left("name"), "has_pattern", value = Some(StringValue("B"))))
+      evaluate(base + ("name" -> "ABC"), partial)._1 shouldBe empty // B found anywhere
+    }
+
     "flag is_legit for blank values" in {
       val rules = Seq(RuleDefinition.validated(Left("name"), "is_legit"))
       evaluate(base, rules)._1 shouldBe empty

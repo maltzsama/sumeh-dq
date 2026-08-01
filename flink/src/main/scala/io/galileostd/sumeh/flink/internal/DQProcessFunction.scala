@@ -25,6 +25,21 @@ private[flink] class DQProcessFunction(
 ) extends ProcessFunction[Row, Row] {
 
   /**
+   * Pre-compiled regexes for every `has_pattern` rule, keyed by canonical `checkType`.
+   *
+   * Compiled once per operator (not per record), since streaming evaluates every record.
+   */
+  private lazy val patternCache: Map[String, java.util.regex.Pattern] =
+    rules
+      .filter(r => RuleRegistry.canonical(r.checkType) == "has_pattern")
+      .map(
+        r =>
+          r.checkType -> java.util.regex.Pattern
+            .compile(DQProcessFunction.requireString(r, "has_pattern requires a regex pattern"))
+      )
+      .toMap
+
+  /**
    * Evaluates one record and emits the enriched row.
    *
    * The record's fields are copied by position into a widened row and augmented with `_dq_errors` (a JSON array of
@@ -41,7 +56,7 @@ private[flink] class DQProcessFunction(
 
     val values = fieldNames.indices.map(i => fieldNames(i) -> row.getField(i)).toMap
 
-    val (errors, skipped) = DQProcessFunction.evaluate(values, rules)
+    val (errors, skipped) = DQProcessFunction.evaluate(values, rules, patternCache)
 
     val enriched = new Row(fieldNames.length + 2)
     var i        = 0
@@ -85,13 +100,15 @@ private[flink] object DQProcessFunction {
    * whose `skipReason` yields a reason are skipped; any exception thrown while evaluating a rule is captured as an
    * ERROR entry.
    *
-   * Args: values: Field-name-to-value map of the record. rules: Rules to evaluate.
+   * Args: values: Field-name-to-value map of the record. rules: Rules to evaluate. patterns: Pre-compiled `has_pattern`
+   * regexes keyed by `checkType` (compiled once per operator, not per record).
    *
    * Returns: A tuple of structured error entries and skipped-rule reasons.
    */
   private[flink] def evaluate(
       values: Map[String, Any],
-      rules: Seq[RuleDefinition]
+      rules: Seq[RuleDefinition],
+      patterns: Map[String, java.util.regex.Pattern] = Map.empty
   ): (List[DQError], List[String]) = {
     val errors  = scala.collection.mutable.ListBuffer[DQError]()
     val skipped = scala.collection.mutable.ListBuffer[String]()
@@ -104,7 +121,7 @@ private[flink] object DQProcessFunction {
           case Some(reason) => skipped += s"${rule.checkType}:$reason"
           case None =>
             try
-              if (!checkRule(values, rule)) errors += buildError(rule)
+              if (!checkRule(values, rule, patterns)) errors += buildError(rule)
             catch {
               case e: Exception => errors += buildError(rule, Some(s"ERROR[${rule.checkType}]: ${e.getMessage}"))
             }
@@ -152,7 +169,11 @@ private[flink] object DQProcessFunction {
    * Throws: IllegalArgumentException if the check type is not implemented for the Flink streaming engine, or if a value
    * cannot be converted to the type the check requires.
    */
-  private def checkRule(values: Map[String, Any], rule: RuleDefinition): Boolean = {
+  private def checkRule(
+      values: Map[String, Any],
+      rule: RuleDefinition,
+      patterns: Map[String, java.util.regex.Pattern] = Map.empty
+  ): Boolean = {
     val field     = rule.field.fold(identity, _.head)
     val rawValue  = values.getOrElse(field, null)
     val checkType = RuleRegistry.canonical(rule.checkType)
@@ -211,8 +232,11 @@ private[flink] object DQProcessFunction {
 
       // Pattern
       case "has_pattern" =>
-        val pattern = rule.value.collect { case StringValue(s) => s }.getOrElse("")
-        rawValue.toString.matches(pattern)
+        val pattern = patterns.getOrElse(
+          rule.checkType,
+          java.util.regex.Pattern.compile(requireString(rule, "has_pattern requires a regex pattern"))
+        )
+        pattern.matcher(rawValue.toString).find()
       case "is_legit" =>
         rawValue != null && rawValue.toString.trim.nonEmpty
 
@@ -267,6 +291,20 @@ private[flink] object DQProcessFunction {
         throw new IllegalArgumentException(s"'$other' not implemented for the Flink streaming engine")
     }
   }
+
+  /**
+   * Extracts the string value of a rule, throwing when absent.
+   *
+   * Args: rule: The rule. msg: The error message when the value is missing.
+   *
+   * Returns: The `StringValue` contents.
+   *
+   * Throws: IllegalArgumentException when `value` is missing or not a string.
+   */
+  private[flink] def requireString(rule: RuleDefinition, msg: String): String =
+    rule.value
+      .collect { case StringValue(s) => s }
+      .getOrElse(throw new IllegalArgumentException(msg))
 
   /**
    * Builds a structured error entry for a failed rule.
