@@ -372,7 +372,7 @@ sbt -batch "coverage" "test" "coverageAggregate" "coverageReport"
 sbt scalafmtAll scalafmtCheckAll
 ```
 
-**Spark floor:** `sumeh-spark` requires **Spark 3.5+ or 4.x** (it relies on `try_to_timestamp`, added in 3.5). The Spark 3.x line is cross-built as `2.12.18 + 2.13.16`; the Spark 4.x line is `2.13.16` only. Core and Flink are cross-built against both Scala versions. Flink is tested on both `2.2.0` (default) and `1.20.0`. Published artifact names carry the engine major version — `sumeh-spark3` / `sumeh-spark4`, `sumeh-flink1` / `sumeh-flink2` — since binaries are not interchangeable across engine versions.
+**Engine floors:** `sumeh-spark` requires **Spark 3.5+ or 4.x** (it relies on `try_to_timestamp`, added in 3.5); `sumeh-flink` requires **Flink 1.20+ or 2.x**. The Spark 3.x line is cross-built as `2.12.18 + 2.13.16`; the Spark 4.x line is `2.13.16` only. Core and Flink are cross-built against both Scala versions. Flink is tested on both `2.2.0` (default) and `1.20.0`. Published artifact names carry the engine major version — `sumeh-spark3` / `sumeh-spark4`, `sumeh-flink1` / `sumeh-flink2` — since binaries are not interchangeable across engine versions.
 
 ---
 
