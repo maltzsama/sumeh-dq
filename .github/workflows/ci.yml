@@ -55,6 +55,9 @@ jobs:
 
       - uses: sbt/setup-sbt@v1
 
+      - name: Check formatting
+        run: sbt scalafmtCheckAll scalafmtSbtCheck
+
       - name: Compile ${{ matrix.module }} (Scala ${{ matrix.scala }})
         run: sbt ${{ matrix.opts }} ++${{ matrix.scala }} ${{ matrix.module }}/compile
 
