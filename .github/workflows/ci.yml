@@ -9,6 +9,22 @@ on:
     types: [ created ]
 
 jobs:
+  format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'corretto'
+          cache: 'sbt'
+
+      - uses: sbt/setup-sbt@v1
+
+      - run: sbt scalafmtCheckAll scalafmtSbtCheck
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -69,9 +85,6 @@ jobs:
           cache: 'sbt'
 
       - uses: sbt/setup-sbt@v1
-
-      - name: Check formatting
-        run: sbt scalafmtCheckAll scalafmtSbtCheck
 
       - name: Compile ${{ matrix.module }} (Scala ${{ matrix.scala }})
         run: sbt ${{ matrix.opts }} ++${{ matrix.scala }} ${{ matrix.module }}/compile
