@@ -34,14 +34,29 @@ jobs:
             scala: '2.12.18'
             opts: '-Dspark.version=3.5.5'
 
+          # Spark — 3.x line under Scala 2.13
+          - module: spark
+            scala: '2.13.16'
+            opts: '-Dspark.version=3.5.5'
+
           # Flink — default version from build.sbt
           - module: flink
             scala: '2.13.16'
             opts: ''
 
+          # Flink — 2.x line under Scala 2.12
+          - module: flink
+            scala: '2.12.18'
+            opts: ''
+
           # Flink — 1.x line (older Kryo; runs via the --add-opens forked tests)
           - module: flink
             scala: '2.13.16'
+            opts: '-Dflink.version=1.20.0'
+
+          # Flink — 1.x line under Scala 2.12
+          - module: flink
+            scala: '2.12.18'
             opts: '-Dflink.version=1.20.0'
 
     steps:

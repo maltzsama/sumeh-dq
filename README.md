@@ -43,7 +43,19 @@ flowchart LR
 | `spark` | `sumeh-spark3` / `sumeh-spark4` | `SparkValidator` — column-vectorized validation on `DataFrame`, zero `collect()` on row data. Artifact name carries the Spark major version |
 | `flink` | `sumeh-flink1` / `sumeh-flink2` | `FlinkValidator` — `DataStream[Row]` processing with side-output bifurcation. Artifact name carries the Flink major version |
 
-`core` has **no runtime dependencies** beyond `upickle` and `slf4j-api` — it is pure data and logic.
+`core` has **no runtime dependencies** beyond `upickle` — it is pure data and logic.
+
+### Supported matrix
+
+| Artifact | Engine | Scala |
+|----------|--------|-------|
+| `sumeh-core` | — | 2.12, 2.13 |
+| `sumeh-spark3` | Spark 3.5+ | 2.12, 2.13 |
+| `sumeh-spark4` | Spark 4.x | 2.13 |
+| `sumeh-flink1` | Flink 1.20+ | 2.12, 2.13 |
+| `sumeh-flink2` | Flink 2.x | 2.12, 2.13 |
+
+Every published artifact is exercised by the CI matrix — the set of tested combinations is never smaller than the set of published ones. The Spark 3 floor is **3.5**, not 3.0: `DateExpr` relies on `try_to_timestamp`, which does not exist before Spark 3.5.
 
 ---
 
