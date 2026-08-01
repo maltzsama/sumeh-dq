@@ -5,8 +5,15 @@ import io.galileostd.sumeh.rule.RuleDefinition
 import org.apache.flink.table.api.{ Table, TableEnvironment, TableResult }
 import org.apache.flink.types.Row
 
+/**
+ * Loads RuleDefinitions from Flink Tables and TableResults.
+ *
+ * Required columns: field, check_type. Optional: value, threshold, execute, level, category. Extra columns are
+ * preserved as metadata.
+ */
 object FlinkRuleLoader {
 
+  /** Collects all rows of a TableResult and closes the iterator. */
   private def drain(result: TableResult): List[Row] = {
     val it = result.collect()
     try {

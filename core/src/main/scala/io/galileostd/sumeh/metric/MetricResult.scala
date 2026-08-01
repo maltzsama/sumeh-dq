@@ -3,25 +3,12 @@ package io.galileostd.sumeh.metric
 /**
  * Output of an Analyzer — pure computation, no opinion.
  *
- * An Analyzer computes a metric on data:
- *   - CompletenessAnalyzer → null_count, completeness_rate
- *   - MeanAnalyzer → mean_value
- *   - PatternAnalyzer → matching/non-matching row ids
+ * An Analyzer computes a metric on data (e.g. CompletenessAnalyzer -> null_count, MeanAnalyzer -> mean_value).
+ * Analyzers are pure — the same input always yields the same output — and don't know about thresholds or rules.
  *
- * Analyzers are PURE — same input always gives same output. Analyzers DON'T know about thresholds or rules.
- *
- * @param metricType
- *   "completeness", "mean", "pattern", "cardinality", etc
- * @param field
- *   Column name(s) analyzed
- * @param value
- *   Primary metric value
- * @param totalRows
- *   Total row count of the DataFrame
- * @param affectedRowIds
- *   Row indices that violate the constraint
- * @param metadata
- *   Extra context (null_count, distribution, etc)
+ * Args: metricType: "completeness", "mean", "pattern", "cardinality", etc. field: Column name(s) analyzed. value:
+ * Primary metric value. totalRows: Total row count of the DataFrame. affectedRowIds: Row indices that violate the
+ * constraint. metadata: Extra context (null_count, distribution, etc.).
  */
 final case class MetricResult(
     metricType: String,
@@ -31,6 +18,8 @@ final case class MetricResult(
     affectedRowIds: List[Long] = List.empty,
     metadata: Map[String, Any] = Map.empty
 ) {
+
+  /** Flattened column name(s): single name or comma-joined list. */
   def fieldName: String = field.fold(identity, _.mkString(","))
 
   override def toString: String =

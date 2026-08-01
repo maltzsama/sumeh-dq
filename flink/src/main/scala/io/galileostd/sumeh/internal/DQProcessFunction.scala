@@ -8,12 +8,23 @@ import org.apache.flink.streaming.api.functions.ProcessFunction
 import org.apache.flink.types.Row
 import org.apache.flink.util.{ Collector, OutputTag }
 
+/**
+ * Flink ProcessFunction that evaluates each record against the rules.
+ *
+ * Enriches every record with `_dq_errors` and `_dq_skipped` fields, routes good records to the good side output and bad
+ * records to the error side output, and also emits the enriched record on the main output. Evaluation is stateless —
+ * one record at a time.
+ *
+ * Args: rules: Rules to evaluate. goodTag: Side-output tag for records that pass every rule. errorTag: Side-output tag
+ * for records with at least one error.
+ */
 private[flink] class DQProcessFunction(
     rules: Seq[RuleDefinition],
     goodTag: OutputTag[Row],
     errorTag: OutputTag[Row]
 ) extends ProcessFunction[Row, Row] {
 
+  /** Evaluates one record, routes it to the right side output, and emits the enriched row. */
   override def processElement(
       row: Row,
       ctx: ProcessFunction[Row, Row]#Context,
@@ -38,6 +49,7 @@ private[flink] class DQProcessFunction(
   }
 }
 
+/** Companion with the pure, cluster-free rule evaluation logic. */
 private[flink] object DQProcessFunction {
 
   /**
@@ -73,6 +85,7 @@ private[flink] object DQProcessFunction {
   // Rule evaluation — pure row-level, no aggregation
   // -------------------------------------------------------------------------
 
+  /** Checks one row against a single rule — pure row-level logic, no aggregation. */
   private def checkRule(values: Map[String, Any], rule: RuleDefinition): Boolean = {
     val field     = rule.field.fold(identity, _.head)
     val rawValue  = values.getOrElse(field, null)
@@ -189,15 +202,18 @@ private[flink] object DQProcessFunction {
     }
   }
 
+  /** Short "checkType:field" message used in the errors field. */
   private def buildErrorMessage(rule: RuleDefinition): String =
     s"${rule.checkType}:${rule.fieldName}"
 
+  /** Converts a raw value to Double, throwing on incompatible types. */
   private def toDouble(v: Any): Double = v match {
     case n: Number => n.doubleValue()
     case s: String => s.toDouble
     case _         => throw new IllegalArgumentException(s"Cannot convert $v to Double")
   }
 
+  /** Converts a raw value to LocalDate, throwing on incompatible types. */
   private def toDate(v: Any): LocalDate = v match {
     case d: LocalDate     => d
     case d: java.sql.Date => d.toLocalDate
@@ -205,12 +221,14 @@ private[flink] object DQProcessFunction {
     case _                => throw new IllegalArgumentException(s"Cannot convert $v to LocalDate")
   }
 
+  /** Converts a raw value to LocalDate, returning null instead of throwing. */
   private def safeToDate(v: Any): LocalDate =
     try toDate(v)
     catch {
       case _: Exception => null
     }
 
+  /** Converts a numeric RuleValue to Double, throwing on non-numeric values. */
   private def ruleValueToDouble(v: Option[io.galileostd.sumeh.rule.RuleValue]): Double = v match {
     case Some(LongValue(l))   => l.toDouble
     case Some(DoubleValue(d)) => d
@@ -218,6 +236,7 @@ private[flink] object DQProcessFunction {
     case _                    => throw new IllegalArgumentException(s"Expected numeric RuleValue, got $v")
   }
 
+  /** Extracts the string forms of a ListValue for membership checks. */
   private def listValuesAsString(v: Option[io.galileostd.sumeh.rule.RuleValue]): Set[String] = v match {
     case Some(ListValue(items)) =>
       items.map {

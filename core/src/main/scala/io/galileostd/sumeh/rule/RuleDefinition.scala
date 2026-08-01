@@ -8,24 +8,10 @@ import io.galileostd.sumeh.exception.SumehException
 /**
  * Data quality rule with validation and metadata preservation.
  *
- * @param field
- *   Column name(s) to validate
- * @param checkType
- *   Validation rule type (must exist in RuleRegistry)
- * @param value
- *   Threshold or comparison value
- * @param threshold
- *   Pass rate threshold (0.0–1.0)
- * @param execute
- *   Whether rule should be executed
- * @param level
- *   Validation level (auto-populated from registry)
- * @param category
- *   Rule category (auto-populated from registry)
- * @param updatedAt
- *   Rule update timestamp
- * @param metadata
- *   Extra fields from source (preserved)
+ * Args: field: Column name(s) to validate checkType: Validation rule type (must exist in RuleRegistry) value: Threshold
+ * or comparison value threshold: Pass rate threshold (0.0–1.0) execute: Whether the rule should be executed level:
+ * Validation level (auto-populated from registry) category: Rule category (auto-populated from registry) updatedAt:
+ * Rule update timestamp metadata: Extra fields from source (preserved)
  */
 final case class RuleDefinition(
     field: Either[String, List[String]],
@@ -38,14 +24,18 @@ final case class RuleDefinition(
     updatedAt: Option[LocalDateTime] = None,
     metadata: Map[String, Any] = Map.empty
 ) {
+
+  /** Flattened column name(s): single name or comma-joined list. */
   def fieldName: String = field.fold(identity, _.mkString(","))
 
+  /** Whether this rule applies at the given level (normalizes `ROW`/`ROW_LEVEL` style suffixes). */
   def isApplicableForLevel(targetLevel: String): Boolean = {
     val normalized = level.toUpperCase.replace("_LEVEL", "")
     val target     = targetLevel.toUpperCase.replace("_LEVEL", "")
     normalized == target
   }
 
+  /** Reason this rule would be skipped at `targetLevel` on `engine`, or `None` if it can run. */
   def skipReason(targetLevel: String, engine: String): Option[String] =
     if (!execute) Some("execute=false")
     else if (!isApplicableForLevel(targetLevel))
@@ -61,11 +51,12 @@ final case class RuleDefinition(
   }
 }
 
+/** Companion with smart constructors and value/field parsing helpers. */
 object RuleDefinition {
 
   /**
    * Smart constructor — validates against RuleRegistry and enriches level/category from manifest, same as Python's
-   * __post_init__.
+   * __post_init__. Throws [[io.galileostd.sumeh.exception.SumehException]] on an unknown `checkType`.
    */
   def validated( // ← era apply
       field: Either[String, List[String]],
@@ -148,6 +139,7 @@ object RuleDefinition {
     )
   }
 
+  /** Parse a `field` value into a single-column `Left` or multi-column `Right`, supporting list/`[a,b]`/`a,b` forms. */
   def parseField(input: Any): Either[String, List[String]] = input match {
     case list: List[_] =>
       val cols = list.map(_.toString.trim)
@@ -176,6 +168,7 @@ object RuleDefinition {
     case other => Left(other.toString.trim)
   }
 
+  /** Parse a raw `value` (from JSON/CSV/maps) into a [[RuleValue]], handling the tagged string forms used by CSV. */
   def parseValue(input: Any): Option[RuleValue] = input match {
     case null                                              => None
     case s: String if s.toUpperCase == "NULL" || s.isEmpty => None
@@ -230,6 +223,7 @@ object RuleDefinition {
     case other => Some(StringValue(other.toString))
   }
 
+  /** Parses an `updated_at` value into a LocalDateTime. */
   private def parseTimestamp(input: Any): Option[LocalDateTime] = input match {
     case dt: LocalDateTime => Some(dt)
     case s: String         => Try(LocalDateTime.parse(s)).toOption
@@ -244,9 +238,16 @@ sealed trait RuleValue {
   def toTaggedString: String
 }
 
+/** Companion with value conversion helpers. */
 object RuleValue {
 
-  /** Converts a RuleValue to a plain JVM value (Spark F.lit-friendly: dates as java.sql.Date). */
+  /**
+   * Converts a RuleValue to a plain JVM value (Spark F.lit-friendly: dates as java.sql.Date).
+   *
+   * Args: v: The rule value.
+   *
+   * Returns: A plain JVM value (String, Long, Double, Boolean, java.sql.Date/Timestamp, or List).
+   */
   def toAny(v: RuleValue): Any = v match {
     case StringValue(s)    => s
     case LongValue(l)      => l
@@ -258,24 +259,37 @@ object RuleValue {
   }
 }
 
+/** String rule value. */
 final case class StringValue(v: String) extends RuleValue {
   def toTaggedString: String = s"StringValue($v)"
 }
+
+/** Long rule value. */
 final case class LongValue(v: Long) extends RuleValue {
   def toTaggedString: String = s"LongValue($v)"
 }
+
+/** Double rule value. */
 final case class DoubleValue(v: Double) extends RuleValue {
   def toTaggedString: String = s"DoubleValue($v)"
 }
+
+/** Boolean rule value. */
 final case class BoolValue(v: Boolean) extends RuleValue {
   def toTaggedString: String = s"BoolValue($v)"
 }
+
+/** Date rule value (local date, no time). */
 final case class DateValue(v: LocalDate) extends RuleValue {
   def toTaggedString: String = s"DateValue($v)"
 }
+
+/** Date-time rule value. */
 final case class DateTimeValue(v: LocalDateTime) extends RuleValue {
   def toTaggedString: String = s"DateTimeValue($v)"
 }
+
+/** List of rule values (used by is_between, is_contained_in, ...). */
 final case class ListValue(v: List[RuleValue]) extends RuleValue {
   def toTaggedString: String = s"ListValue([${v.map(_.toTaggedString).mkString(",")}])"
 }

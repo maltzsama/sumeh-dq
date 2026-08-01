@@ -10,5 +10,16 @@ import org.apache.spark.sql.Column
  * `try_to_timestamp` is available in both.
  */
 private[galileostd] object DateExpr {
+
+  /**
+   * Converts a column to a date, returning null (not throwing) on unparseable input.
+   *
+   * ANSI-safe for Spark 4 (where to_date throws on bad input); preserves Spark 3.x semantics on both 3.5 and 4.x via
+   * try_to_timestamp.
+   *
+   * Args: col: The column to convert.
+   *
+   * Returns: A date column expression.
+   */
   def safeToDate(col: Column): Column = to_date(try_to_timestamp(col))
 }

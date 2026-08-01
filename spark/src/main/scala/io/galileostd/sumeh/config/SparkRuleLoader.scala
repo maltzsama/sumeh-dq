@@ -5,15 +5,20 @@ import io.galileostd.sumeh.config.RuleLoader
 import io.galileostd.sumeh.rule.RuleDefinition
 import org.apache.spark.sql.DataFrame
 
+/**
+ * Loads RuleDefinitions from Spark DataFrames.
+ *
+ * Required columns: field, check_type. Optional: value, threshold, execute, level, category. Extra columns are
+ * preserved as metadata.
+ */
 object SparkRuleLoader {
 
   /**
-   * Load rules from a Spark DataFrame.
+   * Loads rules from a Spark DataFrame.
    *
-   * Required columns: field, check_type Optional: value, threshold, execute, level, category Extra columns → metadata
+   * Args: df: DataFrame with columns field, check_type (and optionally the others).
    *
-   * Example: val df = spark.read.table("dq_rules") val rules = SparkRuleLoader.fromDataFrame(df) val report =
-   * SparkValidator.validate(data, rules)
+   * Returns: List of RuleDefinition.
    */
   def fromDataFrame(df: DataFrame): List[RuleDefinition] = {
     val required = Set("field", "check_type")
@@ -31,9 +36,11 @@ object SparkRuleLoader {
   }
 
   /**
-   * Load rules from a Spark DataFrame that has a single JSON column. Each row is a rule object.
+   * Loads rules from a Spark DataFrame that has a single JSON column; each row is a rule object.
    *
-   * Example: val df = spark.read.table("dq_rules_json") val rules = SparkRuleLoader.fromJsonColumn(df, "config")
+   * Args: df: The DataFrame. column: The column name containing JSON (default "config").
+   *
+   * Returns: List of RuleDefinition.
    */
   def fromJsonColumn(df: DataFrame, column: String = "config"): List[RuleDefinition] = {
     require(df.columns.contains(column), s"Column '$column' not found")

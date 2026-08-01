@@ -9,16 +9,33 @@ import org.apache.spark.sql.{ functions => F, DataFrame }
 // Base trait
 // ============================================================================
 
+/**
+ * Computes a MetricResult for a rule on a Spark DataFrame — pure computation, no rule opinion.
+ *
+ * Analyzers are pure: the same input always yields the same output, and they never apply thresholds (that is the
+ * Constraint's job).
+ */
 trait SparkAnalyzer {
+
+  /**
+   * Computes the metric for the given rule.
+   *
+   * Args: df: The DataFrame. rule: The rule to analyze.
+   *
+   * Returns: The computed metric.
+   */
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult
 
+  /** Flattened column name(s) of the rule. */
   protected def fieldName(rule: RuleDefinition): String =
     rule.field.fold(identity, _.mkString(","))
 
+  /** Throws if the field is not present in the DataFrame. */
   protected def requireField(df: DataFrame, field: String): Unit =
     if (!df.columns.contains(field))
       throw new IllegalArgumentException(s"Field '$field' not found in DataFrame")
 
+  /** Pass rate = (total - failCount) / total; 1.0 when there are no rows. */
   protected def passRate(total: Long, failCount: Long): Double =
     if (total > 0) (total - failCount).toDouble / total else 1.0
 }
@@ -27,6 +44,7 @@ trait SparkAnalyzer {
 // Completeness
 // ============================================================================
 
+/** Analyzer for is_complete — measures null counts on a single field. */
 object CompletenessAnalyzer extends SparkAnalyzer {
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field = rule.field.fold(identity, _.head)
@@ -52,6 +70,7 @@ object CompletenessAnalyzer extends SparkAnalyzer {
   }
 }
 
+/** Analyzer for are_complete — measures rows where any of several fields is null. */
 object MultiFieldCompletenessAnalyzer extends SparkAnalyzer {
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val fields = rule.field.fold(List(_), identity)
@@ -83,6 +102,7 @@ object MultiFieldCompletenessAnalyzer extends SparkAnalyzer {
 // Uniqueness
 // ============================================================================
 
+/** Analyzer for is_unique — measures duplicate values of a single field. */
 object UniquenessAnalyzer extends SparkAnalyzer {
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field = rule.field.fold(identity, _.head)
@@ -107,6 +127,7 @@ object UniquenessAnalyzer extends SparkAnalyzer {
   }
 }
 
+/** Analyzer for are_unique — measures duplicate combinations of several fields. */
 object MultiFieldUniquenessAnalyzer extends SparkAnalyzer {
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val fields = rule.field.fold(List(_), identity)
@@ -135,6 +156,7 @@ object MultiFieldUniquenessAnalyzer extends SparkAnalyzer {
 // Comparison
 // ============================================================================
 
+/** Analyzer for comparison rules (is_equal, is_greater_than, is_positive, ...). */
 object ComparisonAnalyzer extends SparkAnalyzer {
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field     = rule.field.fold(identity, _.head)
@@ -175,6 +197,7 @@ object ComparisonAnalyzer extends SparkAnalyzer {
   }
 }
 
+/** Analyzer for is_between — measures rows outside a [min, max] range. */
 object BetweenAnalyzer extends SparkAnalyzer {
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field = rule.field.fold(identity, _.head)
@@ -209,6 +232,7 @@ object BetweenAnalyzer extends SparkAnalyzer {
   }
 }
 
+/** Analyzer for is_equal_than — compares a field against another column. */
 object ColumnComparisonAnalyzer extends SparkAnalyzer {
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field = rule.field.fold(identity, _.head)
@@ -244,6 +268,7 @@ object ColumnComparisonAnalyzer extends SparkAnalyzer {
 // Membership
 // ============================================================================
 
+/** Analyzer for membership rules (is_contained_in, not_contained_in, ...). */
 object MembershipAnalyzer extends SparkAnalyzer {
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field     = rule.field.fold(identity, _.head)
@@ -290,6 +315,7 @@ object MembershipAnalyzer extends SparkAnalyzer {
 // Pattern
 // ============================================================================
 
+/** Analyzer for has_pattern — measures rows that don't match a regex. */
 object PatternAnalyzer extends SparkAnalyzer {
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field = rule.field.fold(identity, _.head)
@@ -320,6 +346,7 @@ object PatternAnalyzer extends SparkAnalyzer {
   }
 }
 
+/** Analyzer for is_legit — measures null or whitespace-only values. */
 object LegitAnalyzer extends SparkAnalyzer {
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field = rule.field.fold(identity, _.head)
@@ -351,6 +378,7 @@ object LegitAnalyzer extends SparkAnalyzer {
 // Date
 // ============================================================================
 
+/** Analyzer for date rules (is_today, is_past_date, is_on_weekday, all_date_checks, ...). */
 object DateAnalyzer extends SparkAnalyzer {
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field     = rule.field.fold(identity, _.head)
@@ -400,6 +428,7 @@ object DateAnalyzer extends SparkAnalyzer {
   }
 }
 
+/** Analyzer for is_date_between — measures rows outside a [start, end] date range. */
 object DateBetweenAnalyzer extends SparkAnalyzer {
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field = rule.field.fold(identity, _.head)
@@ -433,6 +462,7 @@ object DateBetweenAnalyzer extends SparkAnalyzer {
   }
 }
 
+/** Analyzer for is_date_after / is_date_before — compares a date field against a target date. */
 object DateComparisonAnalyzer extends SparkAnalyzer {
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field     = rule.field.fold(identity, _.head)
@@ -475,6 +505,10 @@ object DateComparisonAnalyzer extends SparkAnalyzer {
 // Aggregation (TABLE level)
 // ============================================================================
 
+/**
+ * Analyzer for TABLE-level aggregations (has_min, has_max, has_sum, has_mean, has_std, has_cardinality, has_entropy,
+ * has_infogain).
+ */
 object AggregationAnalyzer extends SparkAnalyzer {
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field     = rule.field.fold(identity, _.head)
@@ -507,6 +541,7 @@ object AggregationAnalyzer extends SparkAnalyzer {
     )
   }
 
+  /** Shannon entropy -Σ pᵢ·log₂(pᵢ) of the field's value distribution. */
   private def entropy(df: DataFrame, field: String): Double = {
     val counts = df.select(field).na.drop().groupBy(field).count()
     val total  = counts.agg(F.sum("count")).collect()(0).getAs[Long](0)
@@ -519,6 +554,7 @@ object AggregationAnalyzer extends SparkAnalyzer {
         .getAs[Double](0)
   }
 
+  /** Normalized entropy H / log2(cardinality); 1.0 = uniform, 0.0 = single value. */
   private def normalizedEntropy(df: DataFrame, field: String): Double = {
     val h = entropy(df, field)
     val distinct = df
@@ -532,6 +568,7 @@ object AggregationAnalyzer extends SparkAnalyzer {
   }
 }
 
+/** Analyzer for validate_date_format — measures rows that don't parse with the expected format. */
 object DateFormatAnalyzer extends SparkAnalyzer {
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field = rule.field.fold(identity, _.head)
@@ -562,6 +599,7 @@ object DateFormatAnalyzer extends SparkAnalyzer {
   }
 }
 
+/** Analyzer for validate_schema — validates the DataFrame schema against a serialized SchemaDef. */
 object SchemaAnalyzer extends SparkAnalyzer {
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     // value contém o SchemaDef serializado como JSON string
@@ -592,6 +630,7 @@ object SchemaAnalyzer extends SparkAnalyzer {
     )
   }
 
+  /** Converts a ujson value into plain JVM types for SchemaDef.fromMap. */
   private def ujsonToAny(v: ujson.Value): Any = v match {
     case ujson.Str(s)  => s
     case ujson.Num(n)  => if (n == n.toLong) n.toLong else n
@@ -602,6 +641,7 @@ object SchemaAnalyzer extends SparkAnalyzer {
   }
 }
 
+/** Analyzer for satisfies — measures rows that don't match a custom SQL condition. */
 object SatisfiesAnalyzer extends SparkAnalyzer {
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val condition = rule.value

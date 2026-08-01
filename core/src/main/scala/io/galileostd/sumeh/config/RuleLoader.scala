@@ -21,6 +21,7 @@ object RuleLoader {
   // LOAD from strings
   // -------------------------------------------------------------------------
 
+  /** Parse rules from a CSV string (`field,check_type,value,threshold,execute,level,category`). */
   def fromCsvString(csv: String): List[RuleDefinition] = {
     val lines = csv.linesIterator.toList
     if (lines.isEmpty) return List.empty
@@ -36,6 +37,7 @@ object RuleLoader {
       }
   }
 
+  /** Parse rules from a JSON string — a single rule object or an array of rule objects. */
   def fromJsonString(json: String): List[RuleDefinition] = {
     import upickle.default._
 
@@ -60,6 +62,7 @@ object RuleLoader {
   // EXPORT to strings
   // -------------------------------------------------------------------------
 
+  /** Serialize rules to a CSV string, using the lossless tagged [[RuleValue]] format for `value`. */
   def toCsv(rules: List[RuleDefinition]): String = {
     val header = "field,check_type,value,threshold,execute,level,category"
     val lines = rules.map {
@@ -82,6 +85,7 @@ object RuleLoader {
     (header +: lines).mkString("\n")
   }
 
+  /** Serialize rules to a JSON array string (metadata and `value` are stringified). */
   def toJson(rules: List[RuleDefinition]): String = {
     val arr = rules.map {
       r =>
@@ -112,6 +116,7 @@ object RuleLoader {
   // CSV parsing (internal)
   // -------------------------------------------------------------------------
 
+  /** Parse one CSV line, honoring quoted fields and `""` escapes. */
   private def parseCsvLine(line: String): List[String] = {
     val result  = scala.collection.mutable.ListBuffer[String]()
     val current = new StringBuilder
@@ -154,6 +159,7 @@ object RuleLoader {
     result.toList
   }
 
+  /** Quote a CSV field only when it contains a comma, quote, or newline. */
   private def quoteCsv(field: String): String = {
     val needsQuoting = field.contains(",") || field.contains("\"") || field.contains("\n")
     if (needsQuoting) {
@@ -166,6 +172,7 @@ object RuleLoader {
   // JSON helpers (internal)
   // -------------------------------------------------------------------------
 
+  /** Flatten a ujson value to a plain string for [[RuleDefinition.fromMap]]. */
   private def jsonValueToString(v: ujson.Value): String = v match {
     case ujson.Str(s)   => s
     case ujson.Num(n)   => if (n == n.toLong) n.toLong.toString else n.toString
@@ -175,6 +182,7 @@ object RuleLoader {
     case ujson.Obj(obj) => obj.map { case (k, v) => s"$k:${jsonValueToString(v)}" }.mkString("{", ",", "}")
   }
 
+  /** Convert a [[RuleValue]] to its ujson representation. */
   private def ruleValueToJson(v: io.galileostd.sumeh.rule.RuleValue): ujson.Value = v match {
     case io.galileostd.sumeh.rule.StringValue(s)    => ujson.Str(s)
     case io.galileostd.sumeh.rule.LongValue(l)      => ujson.Num(l.toDouble)

@@ -3,22 +3,10 @@ package io.galileostd.sumeh.schema
 /**
  * Definition of a single column in a schema contract.
  *
- * @param name
- *   Column name
- * @param expectedType
- *   Expected canonical type ("string", "integer", "float", etc)
- * @param isOptional
- *   If true, missing column is not an error
- * @param nullable
- *   Whether the column allows nulls
- * @param elementType
- *   For array columns: element type (e.g. "string", "integer")
- * @param requireComment
- *   Whether a comment/description is required
- * @param expectedComment
- *   Expected comment text
- * @param fields
- *   Nested columns for struct types
+ * Args: name: Column name. expectedType: Expected canonical type ("string", "integer", "float", etc). isOptional: If
+ * true, a missing column is not an error. nullable: Whether the column allows nulls. elementType: For array columns:
+ * element type (e.g. "string", "integer"). requireComment: Whether a comment/description is required. expectedComment:
+ * Expected comment text. fields: Nested columns for struct types.
  */
 final case class ColumnDef(
     name: String,
@@ -31,6 +19,7 @@ final case class ColumnDef(
     fields: Option[List[ColumnDef]] = None
 )
 
+/** Companion with a Map-based constructor. */
 object ColumnDef {
 
   /** Create from a Map — mirrors Python's from_dict. */
@@ -56,6 +45,7 @@ object ColumnDef {
     case _ => ColumnDef(name = name, expectedType = "string")
   }
 
+  /** Lenient Boolean coercion (accepts Boolean, "true"/"yes"/"1", and non-zero numbers). */
   private def asBool(v: Any): Boolean = v match {
     case b: Boolean => b
     case s: String  => Set("true", "1", "yes", "y", "t").contains(s.trim.toLowerCase)
@@ -68,17 +58,23 @@ object ColumnDef {
 /**
  * Schema definition — a list of column contracts.
  *
- * @param columns
- *   Column definitions
- * @param strictColumns
- *   If true, extra columns in the DataFrame are errors
+ * Args: columns: Column definitions. strictColumns: If true, extra columns in the DataFrame are errors.
  */
 final case class SchemaDef(
     columns: List[ColumnDef],
     strictColumns: Boolean = false
 )
 
+/** Companion with a Map-based constructor. */
 object SchemaDef {
+
+  /**
+   * Builds a SchemaDef from a column-name -> contract map.
+   *
+   * Args: data: Map of column name to a type string or a property map. strict: When true, extra columns become errors.
+   *
+   * Returns: The resulting SchemaDef.
+   */
   def fromMap(data: Map[String, Any], strict: Boolean = false): SchemaDef =
     SchemaDef(
       columns = data.map { case (k, v) => ColumnDef.fromMap(k, v) }.toList,
@@ -89,16 +85,9 @@ object SchemaDef {
 /**
  * Schema validation report.
  *
- * @param passed
- *   Whether validation passed
- * @param missingCols
- *   Columns required but not found
- * @param typeErrors
- *   Columns with wrong type: colName → error message
- * @param metadataErrors
- *   Columns with comment/nullability issues
- * @param extraCols
- *   Columns present but not in schema (only when strictColumns=true)
+ * Args: passed: Whether validation passed. missingCols: Columns required but not found. typeErrors: Columns with wrong
+ * type — colName -> error message. metadataErrors: Columns with comment/nullability issues. extraCols: Columns present
+ * but not in the schema (only when strictColumns=true).
  */
 final case class SchemaReport(
     passed: Boolean,
@@ -107,9 +96,12 @@ final case class SchemaReport(
     metadataErrors: Map[String, String] = Map.empty,
     extraCols: List[String] = List.empty
 ) {
+
+  /** Total number of issues across all categories. */
   def totalIssues: Int =
     missingCols.size + typeErrors.size + metadataErrors.size + extraCols.size
 
+  /** Flat map form of the report. */
   def toMap: Map[String, Any] = Map(
     "passed"          -> passed,
     "missing_columns" -> missingCols,

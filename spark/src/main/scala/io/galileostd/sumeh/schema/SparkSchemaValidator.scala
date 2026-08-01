@@ -38,6 +38,7 @@ object SparkSchemaValidator {
     "map"           -> "complex"
   )
 
+  /** Maps a Spark DataType to its canonical string form. */
   private def toCanonical(dt: DataType): String = dt match {
     case _: ByteType | _: ShortType | _: IntegerType | _: LongType => "integer"
     case _: FloatType | _: DoubleType | _: DecimalType             => "float"
@@ -77,6 +78,7 @@ object SparkSchemaValidator {
         field.name -> info.toMap
     }.toMap
 
+  /** Extracts a nested struct's fields as a colName -> info map. */
   private def extractSchemaFromStructType(st: StructType): Map[String, Map[String, Any]] =
     st.fields.map {
       f =>
@@ -108,6 +110,7 @@ object SparkSchemaValidator {
     report
   }
 
+  /** Recursively compares expected columns against actual schema info, collecting issues. */
   private def validateRecursive(
       expectedCols: List[ColumnDef],
       actualCols: Map[String, Map[String, Any]],
@@ -186,12 +189,13 @@ object SparkSchemaValidator {
   // Helpers
   // -------------------------------------------------------------------------
 
-  /** Normalize an expected type so it compares against the canonical actual type (struct/map → complex). */
+  /** Normalizes an expected type so it compares against the canonical actual type (struct/map -> complex). */
   private def canonExpectedType(t: String): String = {
     val low = t.toLowerCase
     if (low == "struct" || low == "map") "complex" else low
   }
 
+  /** Best-effort mapping of a raw type name (from extractSchema) back to a Spark DataType. */
   private def rawToDataType(raw: String): DataType = raw.toLowerCase.trim match {
     case "byte" | "tinyint"            => ByteType
     case "short" | "smallint"          => ShortType

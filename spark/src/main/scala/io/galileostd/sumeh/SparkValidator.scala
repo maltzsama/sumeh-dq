@@ -8,6 +8,12 @@ import io.galileostd.sumeh.validation.{ ValidationLevel, ValidationReport, Valid
 import org.apache.spark.sql.{ functions => F, DataFrame }
 import org.apache.spark.sql.types.{ ArrayType, StringType, StructField, StructType }
 
+/**
+ * Spark entry point: validates DataFrames using the Bifurcation Pattern.
+ *
+ * Works on batch AND streaming DataFrames (auto-detected via df.isStreaming). Rules that need state (uniqueness),
+ * custom SQL, or TABLE-level aggregation are skipped with a reason on streaming input — never silently passed.
+ */
 object SparkValidator {
 
   private val errorSchema = ArrayType(
@@ -46,6 +52,9 @@ object SparkValidator {
   // Batch path — analyzers compute metrics, TABLE rules run, full report
   // -------------------------------------------------------------------------
 
+  /**
+   * Batch path: analyzers compute metrics, TABLE rules run, and a full report is produced.
+   */
   private def validateBatch(
       df: DataFrame,
       rules: Seq[RuleDefinition]
@@ -141,6 +150,9 @@ object SparkValidator {
   // Streaming path — column-expression annotation only, no eager ops
   // -------------------------------------------------------------------------
 
+  /**
+   * Streaming path: column-expression annotation only, no eager operations, no aggregations.
+   */
   private def validateStreaming(
       df: DataFrame,
       rules: Seq[RuleDefinition]
@@ -212,6 +224,7 @@ object SparkValidator {
   // Fail conditions per check_type — Column expressions, zero .collect()
   // -------------------------------------------------------------------------
 
+  /** Builds the fail-condition column expression for a rule — pure Spark Columns, zero collect(). */
   private def buildFailCondition(df: DataFrame, rule: RuleDefinition) = {
     import org.apache.spark.sql.Column
     import io.galileostd.sumeh.rule._
@@ -321,14 +334,17 @@ object SparkValidator {
     }
   }
 
+  /** Converts a RuleValue to a plain JVM literal for F.lit(). */
   private def ruleValueToAny(v: Option[io.galileostd.sumeh.rule.RuleValue]): Any =
     v.map(io.galileostd.sumeh.rule.RuleValue.toAny).orNull
 
+  /** Extracts the plain values from a ListValue rule value. */
   private def listValues(v: Option[io.galileostd.sumeh.rule.RuleValue]): Seq[Any] = v match {
     case Some(io.galileostd.sumeh.rule.ListValue(items)) => items.map(v => ruleValueToAny(Some(v)))
     case _                                               => Seq.empty
   }
 
+  /** Builds a SKIPPED result for a rule. */
   private def skippedResult(rule: RuleDefinition, level: ValidationLevel, reason: String) =
     ValidationResult.skipped(
       checkType = rule.checkType,
@@ -338,6 +354,7 @@ object SparkValidator {
       reason = reason
     )
 
+  /** Builds an ERROR result for a rule. */
   private def errorResult(rule: RuleDefinition, level: ValidationLevel, msg: String) =
     ValidationResult(
       id = UUID.randomUUID().toString,

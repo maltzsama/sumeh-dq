@@ -1,5 +1,13 @@
 package io.galileostd.sumeh.rule
 
+/**
+ * Metadata for a single rule in the catalog.
+ *
+ * Args: checkType: Rule name (e.g. "is_complete"). level: Validation level, ROW or TABLE. category: Rule category
+ * (completeness, uniqueness, comparison, ...). description: Human-readable description of what the rule checks.
+ * engines: Set of engine names where the rule is supported (e.g. "spark", "flink-streaming"). aliasOf: When set, this
+ * rule is an alias of another checkType and behaves identically.
+ */
 final case class RuleEntry(
     checkType: String,
     level: String,
@@ -9,6 +17,11 @@ final case class RuleEntry(
     aliasOf: Option[String] = None
 )
 
+/**
+ * The rule catalog: a single source of truth for every supported `checkType`, its level, category, description, and
+ * engine support. Both engines introspect this registry to enforce "no silent passes" — a rule the engine cannot run is
+ * skipped with a reason, never silently accepted.
+ */
 object RuleRegistry {
 
   // ROW-level rules work in both batch and streaming
@@ -118,10 +131,19 @@ object RuleRegistry {
   private val manifest: Map[String, RuleEntry] =
     entries.map(e => e.checkType -> e).toMap
 
+  /** Look up a rule's metadata by `checkType`. */
   def getRule(checkType: String): Option[RuleEntry] = manifest.get(checkType)
-  def listRules(): List[String]                     = entries.map(_.checkType)
+
+  /** All registered rule names. */
+  def listRules(): List[String] = entries.map(_.checkType)
+
+  /** Whether an engine can execute the given rule (rules unsupported by an engine are skipped with a reason). */
   def isSupported(checkType: String, engine: String): Boolean =
     manifest.get(checkType).exists(_.engines.contains(engine))
+
+  /** Rules belonging to a category (e.g. `"date"`, `"aggregation"`). */
   def byCategory(category: String): List[RuleEntry] = entries.filter(_.category == category)
-  def byLevel(level: String): List[RuleEntry]       = entries.filter(_.level == level.toUpperCase)
+
+  /** Rules at a given level (`ROW` / `TABLE`). */
+  def byLevel(level: String): List[RuleEntry] = entries.filter(_.level == level.toUpperCase)
 }

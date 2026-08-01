@@ -72,6 +72,15 @@ object SparkRegistry {
     "satisfies"            -> (SatisfiesAnalyzer, GenericConstraint)
   )
 
+  /**
+   * Returns the analyzer for a check_type.
+   *
+   * Args: checkType: The rule type.
+   *
+   * Returns: The SparkAnalyzer.
+   *
+   * Throws: IllegalArgumentException if the check_type is not implemented in the Spark engine.
+   */
   def getAnalyzer(checkType: String): SparkAnalyzer =
     registry
       .getOrElse(
@@ -82,6 +91,15 @@ object SparkRegistry {
       )
       ._1
 
+  /**
+   * Returns the constraint for a check_type.
+   *
+   * Args: checkType: The rule type.
+   *
+   * Returns: The SparkConstraint.
+   *
+   * Throws: IllegalArgumentException if the check_type is not implemented.
+   */
   def getConstraint(checkType: String): SparkConstraint =
     registry
       .getOrElse(
@@ -92,5 +110,6 @@ object SparkRegistry {
       )
       ._2
 
+  /** All check_types implemented in the Spark engine, sorted. */
   def listImplemented(): List[String] = registry.keys.toList.sorted
 }

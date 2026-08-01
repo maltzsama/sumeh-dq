@@ -4,29 +4,15 @@ import java.time.LocalDateTime
 
 import io.galileostd.sumeh.engine.Splittable
 
-// ValidationReport
 /**
  * Collection of ValidationResults for a single validation run. Returned by engine validate() calls.
  *
- * Bifurcation: use split() to separate good vs bad rows. Use summary() for lightweight JSON payload (e.g. Deletron
- * sink).
+ * Use split() to separate good vs bad rows (Bifurcation) and summary() for a lightweight JSON-friendly payload.
  *
- * @param results
- *   All validation results
- * @param totalRows
- *   Total rows in the DataFrame
- * @param executionTimeMs
- *   How long validation took
- * @param engine
- *   Engine that produced this report
- * @param errorMessage
- *   Top-level error if validation failed entirely
- * @param timestamp
- *   When the report was generated
- * @param dfValidated
- *   Engine-specific validated DataFrame wrapper
- * @param generatedSql
- *   SQL generated during validation (if applicable)
+ * Args: results: All validation results. totalRows: Total rows in the DataFrame. executionTimeMs: How long validation
+ * took. engine: Engine that produced this report. errorMessage: Top-level error if validation failed entirely.
+ * timestamp: When the report was generated. dfValidated: Engine-specific validated DataFrame wrapper. generatedSql: SQL
+ * generated during validation (if applicable).
  */
 final case class ValidationReport[DF](
     results: List[ValidationResult],
@@ -38,14 +24,24 @@ final case class ValidationReport[DF](
     dfValidated: Option[DF] = None,
     generatedSql: Option[String] = None
 ) {
-  def passed: List[ValidationResult]  = results.filter(_.status == ValidationStatus.PASS)
-  def failed: List[ValidationResult]  = results.filter(_.status == ValidationStatus.FAIL)
-  def errors: List[ValidationResult]  = results.filter(_.status == ValidationStatus.ERROR)
+
+  /** Results whose status is PASS. */
+  def passed: List[ValidationResult] = results.filter(_.status == ValidationStatus.PASS)
+
+  /** Results whose status is FAIL. */
+  def failed: List[ValidationResult] = results.filter(_.status == ValidationStatus.FAIL)
+
+  /** Results whose status is ERROR. */
+  def errors: List[ValidationResult] = results.filter(_.status == ValidationStatus.ERROR)
+
+  /** Results whose status is SKIPPED. */
   def skipped: List[ValidationResult] = results.filter(_.status == ValidationStatus.SKIPPED)
 
   /**
-   * Fraction of evaluated (non-skipped) validations that passed. Rules that were skipped (execute=false, wrong level,
-   * unsupported engine) neither pass nor fail and are excluded. Returns 1.0 when there is nothing to evaluate.
+   * Fraction of evaluated (non-skipped) validations that passed.
+   *
+   * Rules that were skipped (execute=false, wrong level, unsupported engine) neither pass nor fail and are excluded.
+   * Returns 1.0 when there is nothing to evaluate.
    */
   def passRate: Double = {
     val evaluated = results.size - skipped.size
@@ -74,6 +70,13 @@ final case class ValidationReport[DF](
       implicit splittable: Splittable[DF]
   ): DF = split()._2
 
+  /**
+   * Flat JSON-friendly map for dashboards / sinks / alerting.
+   *
+   * Args: maxSampleIds: Maximum number of violating row ids to include per rule.
+   *
+   * Returns: A map with run-level totals, pass rate, and per-rule validation details.
+   */
   def summary(maxSampleIds: Int = 100): Map[String, Any] = Map(
     "timestamp"         -> timestamp.toString,
     "engine"            -> engine,
@@ -104,7 +107,10 @@ final case class ValidationReport[DF](
     }
   )
 
-  def size: Int        = results.size
+  /** Number of validation results. */
+  def size: Int = results.size
+
+  /** True when there are no validation results. */
   def isEmpty: Boolean = results.isEmpty
 
   override def toString: String =

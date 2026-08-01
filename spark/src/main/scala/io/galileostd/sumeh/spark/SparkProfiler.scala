@@ -23,6 +23,14 @@ import org.apache.spark.sql.DataFrame
  */
 object SparkProfiler {
 
+  /**
+   * Statistics for a single column.
+   *
+   * Args: type: Canonical column type. nullable: Whether the column allows nulls. rowCount: Total rows profiled.
+   * completeness: Fraction of non-null values (0.0–1.0). distinctCount: Number of distinct values. nullCount: Estimated
+   * number of nulls. uniqueness: distinctCount / rowCount. min/max/mean/stdDev/sum: Numeric statistics (None for
+   * non-numeric columns).
+   */
   final case class ColumnProfile(
       `type`: String,
       nullable: Boolean,
@@ -37,6 +45,8 @@ object SparkProfiler {
       stdDev: Option[Double] = None,
       sum: Option[Double] = None
   ) {
+
+    /** Flat map form of the profile. */
     def toMap: Map[String, Any] = Map(
       "type"           -> `type`,
       "nullable"       -> nullable,
@@ -53,15 +63,24 @@ object SparkProfiler {
     )
   }
 
+  /**
+   * Column-level profile for a full DataFrame.
+   *
+   * Args: tableStats: Run-level stats (total_rows, columns_count, execution_time_ms). columnProfiles: Column name ->
+   * ColumnProfile.
+   */
   final case class ProfileReport(
       tableStats: Map[String, Any],
       columnProfiles: Map[String, ColumnProfile]
   ) {
+
+    /** Flat map form of the report (column profiles flattened to maps). */
     def toMap: Map[String, Any] = Map(
       "table_stats"     -> tableStats,
       "column_profiles" -> columnProfiles.map { case (k, v) => k -> v.toMap }
     )
 
+    /** JSON payload for dashboards / metrics endpoints. */
     def toJson: String = {
       def toValue(v: Any): ujson.Value = v match {
         case i: Int     => ujson.Num(i)
@@ -141,9 +160,11 @@ object SparkProfiler {
     )
   }
 
+  /** True for numeric (or decimal) column types. */
   private def isNumeric(f: StructField): Boolean =
     numericTypes.contains(f.dataType) || f.dataType.isInstanceOf[DecimalType]
 
+  /** Assembles a ColumnProfile from the per-column validation results. */
   private def buildProfile(
       field: StructField,
       results: Seq[ValidationResult],
