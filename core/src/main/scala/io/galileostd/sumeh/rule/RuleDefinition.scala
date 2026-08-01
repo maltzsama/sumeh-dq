@@ -23,8 +23,9 @@ import io.galileostd.sumeh.exception.SumehException
  * @param threshold
  *   minimum fraction of rows that must pass, for ROW-level rules. Ignored for TABLE-level rules.
  * @param tolerance
- *   maximum relative error accepted for TABLE-level aggregation rules. 0.0 = exact match. 0.05 = accepts ±5%. Ignored
- *   for ROW-level rules.
+ *   maximum relative error accepted for TABLE-level aggregation rules. Default `1e-9`, roughly the precision of a
+ *   `Double` — in practice "equal within floating-point error". Use `0.0` for strict bit equality. With an expected
+ *   value of `0.0` the tolerance is treated as absolute, not relative. Ignored for ROW-level rules.
  *
  * execute: When `false` the rule is never run and always reported as `SKIPPED`. level: Validation level, `ROW` or
  * `TABLE` — normally auto-populated by the registry. category: Rule category (e.g. `"completeness"`) — normally
@@ -36,7 +37,7 @@ final case class RuleDefinition(
     checkType: String,
     value: Option[RuleValue] = None,
     threshold: Double = 1.0,
-    tolerance: Double = 0.0,
+    tolerance: Double = 1e-9,
     execute: Boolean = true,
     level: String = "ROW",
     category: String = "unknown",
@@ -115,8 +116,8 @@ object RuleDefinition {
    *
    * Args: field: The column name(s) — `Left` for one, `Right` for several. checkType: The rule type; must exist in the
    * registry. value: Threshold or comparison value for the rule. threshold: Pass-rate threshold in `[0.0, 1.0]`.
-   * tolerance: Relative tolerance for TABLE-level aggregation rules; `0.0` for exact match. execute: `false` to disable
-   * the rule. updatedAt: Rule update timestamp. metadata: Extra keys to preserve.
+   * tolerance: Relative tolerance for TABLE-level aggregation rules; default `1e-9`, `0.0` for exact match. execute:
+   * `false` to disable the rule. updatedAt: Rule update timestamp. metadata: Extra keys to preserve.
    *
    * Returns: A rule with `level`/`category` populated from the registry.
    *
@@ -127,7 +128,7 @@ object RuleDefinition {
       checkType: String,
       value: Option[RuleValue] = None,
       threshold: Double = 1.0,
-      tolerance: Double = 0.0,
+      tolerance: Double = 1e-9,
       execute: Boolean = true,
       updatedAt: Option[LocalDateTime] = None,
       metadata: Map[String, Any] = Map.empty
@@ -161,7 +162,7 @@ object RuleDefinition {
    * Parses the known keys (`field`, `check_type`, `value`, `threshold`, `tolerance`, `execute`, `level`, `category`,
    * `updated_at`) and keeps every other key verbatim in `metadata`, so a source config survives a load→export
    * round-trip. Parsing is lenient: `value` goes through [[parseValue]], `threshold` falls back to `1.0`, `tolerance`
-   * falls back to `0.0`, `execute` accepts booleans and truthy strings. The result is passed through [[validated]] for
+   * falls back to `1e-9`, `execute` accepts booleans and truthy strings. The result is passed through [[validated]] for
    * registry validation.
    *
    * Args: data: The rule as a key→value map (e.g. a CSV row or JSON object).
@@ -189,7 +190,7 @@ object RuleDefinition {
 
     val threshold = data.get("threshold").flatMap(v => Try(v.toString.toDouble).toOption).getOrElse(1.0)
 
-    val tolerance = data.get("tolerance").flatMap(v => Try(v.toString.toDouble).toOption).getOrElse(0.0)
+    val tolerance = data.get("tolerance").flatMap(v => Try(v.toString.toDouble).toOption).getOrElse(1e-9)
 
     val execute = data
       .get("execute")

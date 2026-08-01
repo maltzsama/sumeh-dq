@@ -847,6 +847,58 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       SparkValidator.validate(df, fail).results.head.status shouldBe ValidationStatus.FAIL
     }
 
+    "accept a double sum with representation error by default" in {
+      import io.galileostd.sumeh.rule.DoubleValue
+      val df = spark.createDataFrame(
+        spark.sparkContext.parallelize(Seq(Row(0.1), Row(0.2), Row(0.3))),
+        StructType(Seq(StructField("amount", DoubleType, nullable = true)))
+      )
+      // sum = 0.6000000000000001, not exactly 0.6
+      val rules  = Seq(RuleDefinition.validated(Left("amount"), "has_sum", value = Some(DoubleValue(0.6))))
+      val report = SparkValidator.validate(df, rules)
+      report.failed shouldBe empty
+      report.results.head.status shouldBe ValidationStatus.PASS
+    }
+
+    "accept has_std without an explicit tolerance" in {
+      import io.galileostd.sumeh.rule.DoubleValue
+      val df = spark.createDataFrame(
+        spark.sparkContext.parallelize(Seq(Row(1.0), Row(2.0), Row(3.0), Row(4.0))),
+        StructType(Seq(StructField("n", DoubleType, nullable = true)))
+      )
+      // stddev of [1,2,3,4] (sample) = 1.2909944487358056
+      val rules = Seq(
+        RuleDefinition.validated(Left("n"), "has_std", value = Some(DoubleValue(math.sqrt(5.0 / 3.0))))
+      )
+      val report = SparkValidator.validate(df, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+    }
+
+    "require strict equality when tolerance is 0" in {
+      import io.galileostd.sumeh.rule.DoubleValue
+      val df = spark.createDataFrame(
+        spark.sparkContext.parallelize(Seq(Row(0.1), Row(0.2), Row(0.3))),
+        StructType(Seq(StructField("amount", DoubleType, nullable = true)))
+      )
+      val rules = Seq(
+        RuleDefinition.validated(Left("amount"), "has_sum", value = Some(DoubleValue(0.6)), tolerance = 0.0)
+      )
+      val report = SparkValidator.validate(df, rules)
+      report.results.head.status shouldBe ValidationStatus.FAIL
+    }
+
+    "still fail on a clearly wrong expected value by default" in {
+      import io.galileostd.sumeh.rule.LongValue
+      val df = spark.createDataFrame(
+        spark.sparkContext.parallelize(Seq(Row(100), Row(3))),
+        StructType(Seq(StructField("amount", IntegerType, nullable = true)))
+      )
+      // sum = 103; expected 100 → 3% off, far beyond 1e-9
+      val rules  = Seq(RuleDefinition.validated(Left("amount"), "has_sum", value = Some(LongValue(100))))
+      val report = SparkValidator.validate(df, rules)
+      report.results.head.status shouldBe ValidationStatus.FAIL
+    }
+
     "produce ERROR for has_min on a string column" in {
       import io.galileostd.sumeh.rule.LongValue
       val rules = Seq(
