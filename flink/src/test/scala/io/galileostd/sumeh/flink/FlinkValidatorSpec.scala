@@ -2,7 +2,7 @@ package io.galileostd.sumeh.flink
 
 import scala.collection.JavaConverters._
 
-import io.galileostd.sumeh.rule.RuleDefinition
+import io.galileostd.sumeh.rule.{ RuleDefinition, StringValue }
 import org.apache.flink.api.common.typeinfo.{ TypeInformation, Types }
 import org.apache.flink.api.java.typeutils.RowTypeInfo
 import org.apache.flink.streaming.api.datastream.DataStream
@@ -68,6 +68,52 @@ class FlinkValidatorSpec extends AnyWordSpec with Matchers {
           r.getFieldNames(true).asScala.toSet shouldBe Set("id", "name", "age", "_dq_errors", "_dq_skipped")
           r.getField("_dq_skipped").toString should include("is_unique")
       }
+    }
+
+    "send every row to the bad stream when all rules fail" in {
+      val validated = FlinkValidator.validate(
+        streamOf(namedRow(1, null, -5), namedRow(2, null, -1)),
+        Seq(
+          RuleDefinition.validated(Left("name"), "is_complete"),
+          RuleDefinition.validated(Left("age"), "is_positive")
+        )
+      )
+
+      val (good, bad) = validated.split()
+      good.executeAndCollect(10) shouldBe empty
+      bad.executeAndCollect(10).asScala.map(_.getField("id").asInstanceOf[Int]).toSet shouldBe Set(1, 2)
+    }
+
+    "annotate _dq_skipped for unsupported rules on every row" in {
+      val validated = FlinkValidator.validate(
+        streamOf(namedRow(1, "alice", 30), namedRow(2, "bob", 25)),
+        Seq(
+          RuleDefinition.validated(Left("id"), "is_unique"),
+          RuleDefinition.validated(Left("age"), "has_mean"),
+          RuleDefinition.validated(Left("name"), "satisfies", value = Some(StringValue("name = 'x'")))
+        )
+      )
+
+      val (good, bad) = validated.split()
+      val goodRows    = good.executeAndCollect(10).asScala.toList
+      val badRows     = bad.executeAndCollect(10).asScala.toList
+
+      goodRows.size shouldBe 2
+      badRows shouldBe empty
+      goodRows.foreach {
+        r =>
+          r.getField("_dq_skipped").toString should include("is_unique")
+          r.getField("_dq_skipped").toString should include("has_mean")
+          r.getField("_dq_skipped").toString should include("satisfies")
+      }
+    }
+
+    "handle an empty stream without failing" in {
+      val validated = FlinkValidator.validate(
+        streamOf(),
+        Seq(RuleDefinition.validated(Left("name"), "is_complete"))
+      )
+      validated.toNative.executeAndCollect(10) shouldBe empty
     }
   }
 }

@@ -330,11 +330,17 @@ sbt -batch "++2.12.18" "core/test" "flink/test"
 # Spark under Scala 2.12 (Spark 3.x line)
 sbt -batch -Dspark.version=3.5.5 "++2.12.18" "spark/compile"
 
+# Flink under the 1.x line
+sbt -batch -Dflink.version=1.20.0 "flink/test"
+
+# Statement coverage gate for core (>= 90%)
+sbt -batch "coverage" "core/test" "core/coverageReport"
+
 # Formatting
 sbt scalafmtAll scalafmtCheckAll
 ```
 
-Spark is cross-built as `2.12.18 + 2.13.16` against Spark 3.x, and `2.13.16` against Spark 4.x. Core and Flink are cross-built against both Scala versions.
+Spark is cross-built as `2.12.18 + 2.13.16` against Spark 3.x, and `2.13.16` against Spark 4.x. Core and Flink are cross-built against both Scala versions. Flink is tested on both `2.2.0` (default) and `1.20.0`.
 
 ---
 

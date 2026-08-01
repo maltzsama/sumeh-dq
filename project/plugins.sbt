@@ -1,5 +1,5 @@
 // Code coverage
-addSbtPlugin("org.scoverage" % "sbt-scoverage" % "2.0.9")
+addSbtPlugin("org.scoverage" % "sbt-scoverage" % "2.4.4")
 
 // Formatting
 addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.5.0")

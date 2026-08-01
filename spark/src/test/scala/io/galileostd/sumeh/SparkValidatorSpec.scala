@@ -95,6 +95,65 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
     )
   }
 
+  def dfColumnCompare = spark.createDataFrame(
+    spark.sparkContext.parallelize(Seq(Row(1, 1), Row(2, 2), Row(3, 4))),
+    StructType(Seq(StructField("a", IntegerType, nullable = true), StructField("b", IntegerType, nullable = true)))
+  )
+
+  def dfScale = spark.createDataFrame(
+    spark.sparkContext.parallelize(
+      Seq(Row(5000000000.0), Row(3000000000.0), Row(1500000000.0), Row(500000000.0), Row(2000000000.0))
+    ),
+    StructType(Seq(StructField("revenue", DoubleType, nullable = true)))
+  )
+
+  def dfNegatives = spark.createDataFrame(
+    spark.sparkContext.parallelize(Seq(Row(-5), Row(3))),
+    StructType(Seq(StructField("n", IntegerType, nullable = true)))
+  )
+
+  def dfKeyPairs = spark.createDataFrame(
+    spark.sparkContext.parallelize(Seq(Row(1, "a"), Row(1, "a"), Row(2, "b"))),
+    StructType(Seq(StructField("id", IntegerType, nullable = true), StructField("code", StringType, nullable = true)))
+  )
+
+  def dfTodayMinus = {
+    val today = LocalDate.now()
+    spark.createDataFrame(
+      spark.sparkContext.parallelize(
+        Seq(
+          Row(today.toString),
+          Row(today.minusDays(1).toString),
+          Row(today.minusDays(2).toString),
+          Row(today.minusDays(3).toString)
+        )
+      ),
+      StructType(Seq(StructField("dt", StringType, nullable = true)))
+    )
+  }
+
+  def dfWeekdays = spark.createDataFrame(
+    spark.sparkContext.parallelize(
+      Seq(
+        Row("2025-06-02"), // Monday
+        Row("2025-06-03"), // Tuesday
+        Row("2025-06-04"), // Wednesday
+        Row("2025-06-05"), // Thursday
+        Row("2025-06-06"), // Friday
+        Row("2025-06-07"), // Saturday
+        Row("2025-06-08")  // Sunday
+      )
+    ),
+    StructType(Seq(StructField("dt", StringType, nullable = true)))
+  )
+
+  def dfDateRange = spark.createDataFrame(
+    spark.sparkContext.parallelize(
+      Seq(Row("2020-01-01"), Row("2021-06-01"), Row("2022-01-01"))
+    ),
+    StructType(Seq(StructField("dt", StringType, nullable = true)))
+  )
+
   // -------------------------------------------------------------------------
   // Completeness
   // -------------------------------------------------------------------------
@@ -157,6 +216,18 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       val report = SparkValidator.validate(dfUnique, rules)
       report.results.head.status shouldBe ValidationStatus.PASS
     }
+
+    "pass for is_composite_key on unique pairs" in {
+      val rules  = Seq(RuleDefinition.validated(Right(List("id", "category")), "is_composite_key", threshold = 1.0))
+      val report = SparkValidator.validate(dfUnique, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+    }
+
+    "fail is_composite_key on duplicate pairs" in {
+      val rules  = Seq(RuleDefinition.validated(Right(List("id", "code")), "is_composite_key", threshold = 1.0))
+      val report = SparkValidator.validate(dfKeyPairs, rules)
+      report.results.head.status shouldBe ValidationStatus.FAIL
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -204,6 +275,76 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
     "fail is_in_millions when some values are below 1M" in {
       val rules  = Seq(RuleDefinition.validated(Left("revenue"), "is_in_millions", threshold = 1.0))
       val report = SparkValidator.validate(dfBasic, rules)
+      report.results.head.status shouldBe ValidationStatus.FAIL
+    }
+
+    "pass is_less_than 41" in {
+      import io.galileostd.sumeh.rule.LongValue
+      val rules =
+        Seq(RuleDefinition.validated(Left("age"), "is_less_than", value = Some(LongValue(41)), threshold = 1.0))
+      val report = SparkValidator.validate(dfBasic, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+    }
+
+    "fail is_less_than 30 when age=30 exists" in {
+      import io.galileostd.sumeh.rule.LongValue
+      val rules =
+        Seq(RuleDefinition.validated(Left("age"), "is_less_than", value = Some(LongValue(30)), threshold = 1.0))
+      val report = SparkValidator.validate(dfBasic, rules)
+      report.results.head.status shouldBe ValidationStatus.FAIL
+      report.results.head.actualValue.get shouldBe 0.4
+    }
+
+    "pass is_less_or_equal_than 40" in {
+      import io.galileostd.sumeh.rule.LongValue
+      val rules = Seq(
+        RuleDefinition.validated(Left("age"), "is_less_or_equal_than", value = Some(LongValue(40)), threshold = 1.0)
+      )
+      val report = SparkValidator.validate(dfBasic, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+    }
+
+    "pass is_greater_or_equal_than 17" in {
+      import io.galileostd.sumeh.rule.LongValue
+      val rules = Seq(
+        RuleDefinition.validated(Left("age"), "is_greater_or_equal_than", value = Some(LongValue(17)), threshold = 1.0)
+      )
+      val report = SparkValidator.validate(dfBasic, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+    }
+
+    "fail is_equal_than when columns differ on a row" in {
+      import io.galileostd.sumeh.rule.StringValue
+      val rules = Seq(
+        RuleDefinition.validated(Left("a"), "is_equal_than", value = Some(StringValue("b")), threshold = 1.0)
+      )
+      val report = SparkValidator.validate(dfColumnCompare, rules)
+      report.results.head.status shouldBe ValidationStatus.FAIL
+      report.results.head.actualValue.get shouldBe 2.0 / 3.0
+    }
+
+    "pass is_equal_than when columns match on every row" in {
+      import io.galileostd.sumeh.rule.StringValue
+      val df = spark.createDataFrame(
+        spark.sparkContext.parallelize(Seq(Row(1, 1), Row(2, 2))),
+        StructType(Seq(StructField("a", IntegerType, nullable = true), StructField("b", IntegerType, nullable = true)))
+      )
+      val rules = Seq(
+        RuleDefinition.validated(Left("a"), "is_equal_than", value = Some(StringValue("b")), threshold = 1.0)
+      )
+      SparkValidator.validate(df, rules).results.head.status shouldBe ValidationStatus.PASS
+    }
+
+    "pass is_negative for negative values" in {
+      val rules  = Seq(RuleDefinition.validated(Left("n"), "is_negative", threshold = 0.5))
+      val report = SparkValidator.validate(dfNegatives, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+      report.results.head.actualValue.get shouldBe 0.5
+    }
+
+    "fail is_negative when positive values exist" in {
+      val rules  = Seq(RuleDefinition.validated(Left("n"), "is_negative", threshold = 1.0))
+      val report = SparkValidator.validate(dfNegatives, rules)
       report.results.head.status shouldBe ValidationStatus.FAIL
     }
   }
@@ -254,6 +395,62 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       )
       val report = SparkValidator.validate(dfBasic, rules)
       report.results.head.status shouldBe ValidationStatus.PASS
+    }
+
+    "pass is_in as an alias for is_contained_in" in {
+      import io.galileostd.sumeh.rule.{ ListValue, StringValue }
+      val rules = Seq(
+        RuleDefinition.validated(
+          Left("status"),
+          "is_in",
+          value = Some(ListValue(List(StringValue("active"), StringValue("inactive"), StringValue("pending")))),
+          threshold = 1.0
+        )
+      )
+      val report = SparkValidator.validate(dfBasic, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+    }
+
+    "pass not_in with absent values" in {
+      import io.galileostd.sumeh.rule.{ ListValue, StringValue }
+      val rules = Seq(
+        RuleDefinition.validated(
+          Left("status"),
+          "not_in",
+          value = Some(ListValue(List(StringValue("banned"), StringValue("deleted")))),
+          threshold = 1.0
+        )
+      )
+      val report = SparkValidator.validate(dfBasic, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+    }
+
+    "fail not_in when a value is present" in {
+      import io.galileostd.sumeh.rule.{ ListValue, StringValue }
+      val rules = Seq(
+        RuleDefinition.validated(
+          Left("status"),
+          "not_in",
+          value = Some(ListValue(List(StringValue("active")))),
+          threshold = 1.0
+        )
+      )
+      val report = SparkValidator.validate(dfBasic, rules)
+      report.results.head.status shouldBe ValidationStatus.FAIL
+      report.results.head.actualValue.get shouldBe 0.4
+    }
+
+    "pass is_in_billions for values >= 1B" in {
+      val rules  = Seq(RuleDefinition.validated(Left("revenue"), "is_in_billions", threshold = 0.8))
+      val report = SparkValidator.validate(dfScale, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+      report.results.head.actualValue.get shouldBe 0.8
+    }
+
+    "fail is_in_billions when some values are below 1B" in {
+      val rules  = Seq(RuleDefinition.validated(Left("revenue"), "is_in_billions", threshold = 1.0))
+      val report = SparkValidator.validate(dfScale, rules)
+      report.results.head.status shouldBe ValidationStatus.FAIL
     }
   }
 
@@ -344,6 +541,131 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       report.results.head.status shouldBe ValidationStatus.FAIL
       report.split()._2.count() shouldBe 2
     }
+
+    "detect is_today" in {
+      val rules  = Seq(RuleDefinition.validated(Left("dt"), "is_today", threshold = 0.1))
+      val report = SparkValidator.validate(dfTodayMinus, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+      report.results.head.actualValue.get shouldBe 0.25
+    }
+
+    "detect is_yesterday" in {
+      val rules  = Seq(RuleDefinition.validated(Left("dt"), "is_yesterday", threshold = 0.1))
+      val report = SparkValidator.validate(dfTodayMinus, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+      report.results.head.actualValue.get shouldBe 0.25
+    }
+
+    "detect is_t_minus_2" in {
+      val rules  = Seq(RuleDefinition.validated(Left("dt"), "is_t_minus_2", threshold = 0.1))
+      val report = SparkValidator.validate(dfTodayMinus, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+    }
+
+    "detect is_t_minus_3" in {
+      val rules  = Seq(RuleDefinition.validated(Left("dt"), "is_t_minus_3", threshold = 0.1))
+      val report = SparkValidator.validate(dfTodayMinus, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+    }
+
+    "detect is_on_weekday" in {
+      val rules  = Seq(RuleDefinition.validated(Left("dt"), "is_on_weekday", threshold = 0.5))
+      val report = SparkValidator.validate(dfWeekdays, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+      report.results.head.actualValue.get shouldBe 5.0 / 7.0
+    }
+
+    "detect is_on_weekend" in {
+      val rules  = Seq(RuleDefinition.validated(Left("dt"), "is_on_weekend", threshold = 0.1))
+      val report = SparkValidator.validate(dfWeekdays, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+      report.results.head.actualValue.get shouldBe 2.0 / 7.0
+    }
+
+    "detect each weekday rule" in {
+      val rules = Seq(
+        RuleDefinition.validated(Left("dt"), "is_on_monday", threshold = 0.1),
+        RuleDefinition.validated(Left("dt"), "is_on_tuesday", threshold = 0.1),
+        RuleDefinition.validated(Left("dt"), "is_on_wednesday", threshold = 0.1),
+        RuleDefinition.validated(Left("dt"), "is_on_thursday", threshold = 0.1),
+        RuleDefinition.validated(Left("dt"), "is_on_friday", threshold = 0.1),
+        RuleDefinition.validated(Left("dt"), "is_on_saturday", threshold = 0.1),
+        RuleDefinition.validated(Left("dt"), "is_on_sunday", threshold = 0.1)
+      )
+      val report = SparkValidator.validate(dfWeekdays, rules)
+      report.results.foreach(r => r.status shouldBe ValidationStatus.PASS)
+      report.results.foreach(r => r.actualValue.get shouldBe 1.0 / 7.0)
+    }
+
+    "detect is_date_between" in {
+      import io.galileostd.sumeh.rule.{ ListValue, StringValue }
+      val rules = Seq(
+        RuleDefinition.validated(
+          Left("dt"),
+          "is_date_between",
+          value = Some(ListValue(List(StringValue("2020-06-01"), StringValue("2021-12-31")))),
+          threshold = 0.1
+        )
+      )
+      val report = SparkValidator.validate(dfDateRange, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+      report.results.head.actualValue.get shouldBe 1.0 / 3.0
+    }
+
+    "detect is_date_after" in {
+      import io.galileostd.sumeh.rule.StringValue
+      val rules = Seq(
+        RuleDefinition.validated(Left("dt"), "is_date_after", value = Some(StringValue("2021-01-01")), threshold = 0.1)
+      )
+      val report = SparkValidator.validate(dfDateRange, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+      report.results.head.actualValue.get shouldBe 2.0 / 3.0
+    }
+
+    "detect is_date_before" in {
+      import io.galileostd.sumeh.rule.StringValue
+      val rules = Seq(
+        RuleDefinition.validated(Left("dt"), "is_date_before", value = Some(StringValue("2021-06-01")), threshold = 0.1)
+      )
+      val report = SparkValidator.validate(dfDateRange, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+      report.results.head.actualValue.get shouldBe 1.0 / 3.0
+    }
+
+    "not throw on unparseable dates for is_date_between" in {
+      import io.galileostd.sumeh.rule.{ ListValue, StringValue }
+      val df = spark.createDataFrame(
+        spark.sparkContext.parallelize(
+          Seq(Row("2024-05-06"), Row("not-a-date"), Row("2024/05/06"), Row("2025-01-01"))
+        ),
+        StructType(Seq(StructField("dt", StringType, nullable = true)))
+      )
+      val rules = Seq(
+        RuleDefinition.validated(
+          Left("dt"),
+          "is_date_between",
+          value = Some(ListValue(List(StringValue("2024-01-01"), StringValue("2024-12-31")))),
+          threshold = 1.0
+        )
+      )
+      val report = SparkValidator.validate(df, rules)
+      report.results.head.status shouldBe ValidationStatus.FAIL
+      // unparseable dates are treated as pass (null), only the out-of-range row fails
+      report.split()._2.count() shouldBe 1
+      report.split()._1.count() shouldBe 3
+    }
+
+    "not throw on unparseable dates for is_on_weekday" in {
+      val df = spark.createDataFrame(
+        spark.sparkContext.parallelize(
+          Seq(Row("2024-05-06"), Row("not-a-date"), Row("2024/05/06"), Row("2025-06-08"))
+        ),
+        StructType(Seq(StructField("dt", StringType, nullable = true)))
+      )
+      val rules  = Seq(RuleDefinition.validated(Left("dt"), "is_on_weekday", threshold = 1.0))
+      val report = SparkValidator.validate(df, rules)
+      report.results.head.status shouldBe ValidationStatus.FAIL
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -380,6 +702,31 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
         Seq(RuleDefinition.validated(Left("status"), "has_cardinality", value = Some(LongValue(3)), threshold = 0.0))
       val report = SparkValidator.validate(dfBasic, rules)
       report.results.head.status shouldBe ValidationStatus.PASS
+    }
+
+    "pass has_sum with the sum of the column" in {
+      import io.galileostd.sumeh.rule.LongValue
+      val rules  = Seq(RuleDefinition.validated(Left("age"), "has_sum", value = Some(LongValue(147)), threshold = 0.0))
+      val report = SparkValidator.validate(dfBasic, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+      report.results.head.actualValue.get shouldBe 147.0
+    }
+
+    "fail has_sum on wrong value" in {
+      import io.galileostd.sumeh.rule.LongValue
+      val rules  = Seq(RuleDefinition.validated(Left("age"), "has_sum", value = Some(LongValue(999)), threshold = 0.0))
+      val report = SparkValidator.validate(dfBasic, rules)
+      report.results.head.status shouldBe ValidationStatus.FAIL
+    }
+
+    "pass has_std within relative tolerance" in {
+      import io.galileostd.sumeh.rule.DoubleValue
+      val rules =
+        Seq(RuleDefinition.validated(Left("age"), "has_std", value = Some(DoubleValue(8.9)), threshold = 0.01))
+      val report = SparkValidator.validate(dfBasic, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+      report.results.head.actualValue.get should be > 8.9
+      report.results.head.actualValue.get should be < 8.92
     }
   }
 
@@ -554,6 +901,61 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       report.results.head.status shouldBe ValidationStatus.SKIPPED
       report.passRate shouldBe 1.0
       report.skipped should have size 1
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Threshold boundary
+  // -------------------------------------------------------------------------
+
+  "Threshold" should {
+
+    "pass when pass rate equals the threshold" in {
+      // name has 4/5 non-null rows -> pass rate 0.8
+      val rules  = Seq(RuleDefinition.validated(Left("name"), "is_complete", threshold = 0.8))
+      val report = SparkValidator.validate(dfBasic, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+      report.results.head.actualValue.get shouldBe 0.8
+    }
+
+    "fail when pass rate drops just below the threshold" in {
+      val rules  = Seq(RuleDefinition.validated(Left("name"), "is_complete", threshold = 0.8001))
+      val report = SparkValidator.validate(dfBasic, rules)
+      report.results.head.status shouldBe ValidationStatus.FAIL
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Empty input
+  // -------------------------------------------------------------------------
+
+  "Empty input" should {
+
+    "not fail an empty DataFrame for completeness" in {
+      val empty = spark.createDataFrame(
+        spark.sparkContext.emptyRDD[Row],
+        StructType(Seq(StructField("id", IntegerType, nullable = true)))
+      )
+      val rules  = Seq(RuleDefinition.validated(Left("id"), "is_complete", threshold = 1.0))
+      val report = SparkValidator.validate(empty, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+      report.totalRows shouldBe 0L
+    }
+
+    "not fail an empty DataFrame for a date rule" in {
+      val empty = spark.createDataFrame(
+        spark.sparkContext.emptyRDD[Row],
+        StructType(Seq(StructField("dt", StringType, nullable = true)))
+      )
+      val rules  = Seq(RuleDefinition.validated(Left("dt"), "is_past_date", threshold = 1.0))
+      val report = SparkValidator.validate(empty, rules)
+      report.results.head.status shouldBe ValidationStatus.PASS
+    }
+
+    "produce ERROR for a missing field on a numeric rule" in {
+      val rules  = Seq(RuleDefinition.validated(Left("missing"), "is_greater_than"))
+      val report = SparkValidator.validate(dfBasic, rules)
+      report.results.head.status shouldBe ValidationStatus.ERROR
     }
   }
 }

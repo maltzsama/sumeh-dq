@@ -131,5 +131,56 @@ class SparkStreamingSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
 
       spark.sql("select * from dq_date_out").count() shouldBe 3
     }
+
+    "bifurcate into good and bad streams when every row is valid" in {
+      val allGood = Seq(
+        """{"id":1,"name":"alice","age":30,"status":"active","dt":"2024-05-06"}""",
+        """{"id":2,"name":"bob","age":25,"status":"active","dt":"2024-05-06"}""",
+        """{"id":3,"name":"carol","age":40,"status":"active","dt":"2024-05-06"}"""
+      )
+      val report = SparkValidator.validate(
+        streamOf(writeRows(allGood: _*)),
+        Seq(
+          RuleDefinition.validated(Left("name"), "is_complete"),
+          RuleDefinition.validated(Left("age"), "is_positive")
+        )
+      )
+      val (good, bad) = report.dfValidated.get.splitByErrors()
+
+      val gq = good.writeStream.format("memory").queryName("dq_good_all").outputMode("append").start()
+      gq.processAllAvailable()
+      gq.stop()
+      spark.sql("select * from dq_good_all").count() shouldBe 3
+
+      val bq = bad.writeStream.format("memory").queryName("dq_bad_all").outputMode("append").start()
+      bq.processAllAvailable()
+      bq.stop()
+      spark.sql("select * from dq_bad_all").count() shouldBe 0
+    }
+
+    "bifurcate into good and bad streams when every row is invalid" in {
+      val allBad = Seq(
+        """{"id":1,"name":null,"age":-5,"status":"active","dt":"2024-05-06"}""",
+        """{"id":2,"name":null,"age":-1,"status":"active","dt":"2024-05-06"}"""
+      )
+      val report = SparkValidator.validate(
+        streamOf(writeRows(allBad: _*)),
+        Seq(
+          RuleDefinition.validated(Left("name"), "is_complete"),
+          RuleDefinition.validated(Left("age"), "is_positive")
+        )
+      )
+      val (good, bad) = report.dfValidated.get.splitByErrors()
+
+      val gq = good.writeStream.format("memory").queryName("dq_good_none").outputMode("append").start()
+      gq.processAllAvailable()
+      gq.stop()
+      spark.sql("select * from dq_good_none").count() shouldBe 0
+
+      val bq = bad.writeStream.format("memory").queryName("dq_bad_none").outputMode("append").start()
+      bq.processAllAvailable()
+      bq.stop()
+      spark.sql("select * from dq_bad_none").count() shouldBe 2
+    }
   }
 }

@@ -32,6 +32,8 @@ lazy val core = (project in file("core"))
     name               := "sumeh-core",
     scalaVersion       := "2.13.16",
     crossScalaVersions := Seq("2.12.18", "2.13.16"),
+    coverageMinimumStmtTotal := 90,
+    coverageFailOnMinimum    := true,
     libraryDependencies ++= Seq(
       "com.lihaoyi"   %% "upickle"   % "4.4.3",
       "org.slf4j"      % "slf4j-api" % "2.0.18",

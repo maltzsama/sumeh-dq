@@ -81,6 +81,7 @@ private[flink] object DQProcessFunction {
     if (
       rawValue == null &&
       checkType != "is_complete" &&
+      checkType != "are_complete" &&
       checkType != "is_legit" &&
       checkType != "validate_date_format"
     )
