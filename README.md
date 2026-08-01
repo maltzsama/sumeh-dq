@@ -39,6 +39,52 @@ Sumeh is a Scala data-quality library that runs the same declarative validation 
 
 ---
 
+## Installing
+
+Artifacts are published to **GitHub Packages** (`https://maven.pkg.github.com/maltzsama/sumeh-dq`). Version numbers follow the release tags (`v0.1.0` → `0.1.0`).
+
+### sbt
+
+```scala
+resolvers += "GitHub Packages" at "https://maven.pkg.github.com/maltzsama/sumeh-dq"
+
+libraryDependencies ++= Seq(
+  "io.galileostd" %% "sumeh-core"  % "0.1.0",
+  "io.galileostd" %% "sumeh-spark" % "0.1.0", // only if you validate Spark DataFrames
+  "io.galileostd" %% "sumeh-flink" % "0.1.0"  // only if you validate Flink streams
+)
+```
+
+Private repos (or any repo) require credentials to resolve:
+
+```scala
+credentials += Credentials(
+  "GitHub Package Registry",
+  "maven.pkg.github.com",
+  "<your-github-username>",
+  "<personal-access-token>"
+)
+```
+
+### Maven
+
+```xml
+<repositories>
+  <repository>
+    <id>github</id>
+    <url>https://maven.pkg.github.com/maltzsama/sumeh-dq</url>
+  </repository>
+</repositories>
+
+<dependency>
+  <groupId>io.galileostd</groupId>
+  <artifactId>sumeh-core_2.13</artifactId>
+  <version>0.1.0</version>
+</dependency>
+```
+
+---
+
 ## Quick Start
 
 ### 1. Spark (batch)

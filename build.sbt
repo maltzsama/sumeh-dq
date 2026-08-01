@@ -1,5 +1,17 @@
 ThisBuild / organization := "io.galileostd"
 ThisBuild / version      := sys.props.getOrElse("version", "0.1.0-SNAPSHOT")
+ThisBuild / description  := "Declarative data-quality validation for Spark and Flink: one rule catalog, single-pass bifurcation."
+ThisBuild / homepage     := Some(url("https://github.com/maltzsama/sumeh-dq"))
+ThisBuild / licenses     := Seq("Apache-2.0" -> url("https://www.apache.org/licenses/LICENSE-2.0.txt"))
+ThisBuild / scmInfo      := Some(
+  ScmInfo(
+    url("https://github.com/maltzsama/sumeh-dq"),
+    "scm:git:https://github.com/maltzsama/sumeh-dq.git"
+  )
+)
+ThisBuild / developers := List(
+  Developer("maltzsama", "Demetrius Albuquerque", "demetrius.albuquerque@yahoo.com.br", url("https://github.com/maltzsama"))
+)
 
 ThisBuild / Test / parallelExecution := false
 
