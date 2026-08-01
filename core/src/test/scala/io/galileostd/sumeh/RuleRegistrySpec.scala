@@ -107,15 +107,27 @@ class RuleRegistrySpec extends AnyWordSpec with Matchers {
       tableRules.foreach(_.level shouldBe "TABLE")
     }
 
-    "not support flink-streaming for uniqueness rules" in {
+    "mark uniqueness rules spark-batch only" in {
+      RuleRegistry.isSupported("is_unique", "spark") shouldBe true
+      RuleRegistry.isSupported("is_unique", "spark-streaming") shouldBe false
+      RuleRegistry.isSupported("is_unique", "flink") shouldBe false
       RuleRegistry.isSupported("is_unique", "flink-streaming") shouldBe false
-      RuleRegistry.isSupported("is_unique", "flink") shouldBe true
+      RuleRegistry.isSupported("are_unique", "spark") shouldBe true
+      RuleRegistry.isSupported("are_unique", "spark-streaming") shouldBe false
+      RuleRegistry.isSupported("are_unique", "flink") shouldBe false
       RuleRegistry.isSupported("are_unique", "flink-streaming") shouldBe false
+      RuleRegistry.isSupported("is_primary_key", "spark") shouldBe true
+      RuleRegistry.isSupported("is_primary_key", "spark-streaming") shouldBe false
+      RuleRegistry.isSupported("is_primary_key", "flink-streaming") shouldBe false
+      RuleRegistry.isSupported("is_composite_key", "spark") shouldBe true
+      RuleRegistry.isSupported("is_composite_key", "spark-streaming") shouldBe false
     }
 
-    "not support flink-streaming for satisfies" in {
+    "not support streaming engines for satisfies" in {
+      RuleRegistry.isSupported("satisfies", "spark-streaming") shouldBe false
       RuleRegistry.isSupported("satisfies", "flink-streaming") shouldBe false
       RuleRegistry.isSupported("satisfies", "spark") shouldBe true
+      RuleRegistry.isSupported("satisfies", "flink") shouldBe true
     }
 
     "not support streaming engines for validate_schema" in {

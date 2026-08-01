@@ -14,8 +14,11 @@ object RuleRegistry {
   // ROW-level rules work in both batch and streaming
   private val row = Set("spark", "spark-streaming", "flink", "flink-streaming")
 
-  // Row rules that require state/windowing (not available in the stateless Flink streaming engine)
-  private val streamingImpossible = Set("spark", "spark-streaming", "flink")
+  // Row rules that require state/windowing (not available in either stateless streaming engine)
+  private val streamingImpossible = Set("spark", "flink")
+
+  // Uniqueness requires global state over the whole dataset — only Spark batch can do it
+  private val uniqueness = Set("spark")
 
   // TABLE-level aggregations only work in batch (no streaming)
   private val batch = Set("spark", "flink")
@@ -25,14 +28,14 @@ object RuleRegistry {
     RuleEntry("is_complete", "ROW", "completeness", "Checks that field has no null values", row),
     RuleEntry("are_complete", "ROW", "completeness", "Checks that multiple fields have no null values", row),
     // Uniqueness
-    RuleEntry("is_unique", "ROW", "uniqueness", "Checks that field values are unique", streamingImpossible),
-    RuleEntry("are_unique", "ROW", "uniqueness", "Checks that combination of fields is unique", streamingImpossible),
+    RuleEntry("is_unique", "ROW", "uniqueness", "Checks that field values are unique", uniqueness),
+    RuleEntry("are_unique", "ROW", "uniqueness", "Checks that combination of fields is unique", uniqueness),
     RuleEntry(
       "is_primary_key",
       "ROW",
       "uniqueness",
       "Alias for is_unique",
-      streamingImpossible,
+      uniqueness,
       aliasOf = Some("is_unique")
     ),
     RuleEntry(
@@ -40,7 +43,7 @@ object RuleRegistry {
       "ROW",
       "uniqueness",
       "Alias for are_unique",
-      streamingImpossible,
+      uniqueness,
       aliasOf = Some("are_unique")
     ),
     // Comparison

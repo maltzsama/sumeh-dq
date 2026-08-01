@@ -248,7 +248,7 @@ Run it as a rule too: `RuleDefinition.validated(Left("_schema"), "validate_schem
 ¹ alias of another rule.
 
 - **Aliases** resolve to their target (`is_in` → `is_contained_in`, `is_primary_key` → `is_unique`, ...).
-- **Engine support** is enforced: `RuleRegistry.isSupported(checkType, engine)` is `false` for uniqueness/SQL in Flink streaming, and for TABLE-level rules in any streaming engine.
+- **Engine support** is enforced: `RuleRegistry.isSupported(checkType, engine)` is `false` for uniqueness rules (`is_unique`, `are_unique`, `is_primary_key`, `is_composite_key`) everywhere except **Spark batch**, for `satisfies` in any streaming engine (`spark-streaming`, `flink-streaming`), and for TABLE-level rules in any streaming engine.
 - `RuleRegistry.listRules()`, `.byCategory(...)`, `.byLevel(...)`, `.getRule(...)` let you introspect the catalog at runtime.
 
 ---
