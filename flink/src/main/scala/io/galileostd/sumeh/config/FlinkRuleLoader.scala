@@ -1,13 +1,20 @@
 package io.galileostd.sumeh.flink.config
 
-import scala.jdk.CollectionConverters._
-
 import io.galileostd.sumeh.config.RuleLoader
 import io.galileostd.sumeh.rule.RuleDefinition
 import org.apache.flink.table.api.{ Table, TableEnvironment, TableResult }
 import org.apache.flink.types.Row
 
 object FlinkRuleLoader {
+
+  private def drain(result: TableResult): List[Row] = {
+    val it = result.collect()
+    try {
+      val buf = List.newBuilder[Row]
+      while (it.hasNext) buf += it.next()
+      buf.result()
+    } finally it.close()
+  }
 
   /**
    * Load rules from a Flink Table.
@@ -18,7 +25,6 @@ object FlinkRuleLoader {
    *   List of RuleDefinition
    */
   def fromTable(table: Table): List[RuleDefinition] = {
-    // 🔥 Obtém os nomes das colunas diretamente da Table (sempre disponível)
     val fieldNames = table.getSchema.getFieldNames
 
     val required = Set("field", "check_type")
@@ -26,8 +32,7 @@ object FlinkRuleLoader {
     val missing  = required -- cols
     require(missing.isEmpty, s"Missing required columns: ${missing.mkString(", ")}")
 
-    val result: TableResult = table.execute()
-    val rows                = result.collect().asScala.toList
+    val rows = drain(table.execute())
 
     rows.map {
       row =>
@@ -57,17 +62,17 @@ object FlinkRuleLoader {
       column: String = "config",
       tableEnv: TableEnvironment
   ): List[RuleDefinition] = {
-    // 🔥 Usa sqlQuery para selecionar a coluna (não depende da bridge)
-    val tableName           = table.toString
-    val sql                 = s"SELECT `$column` FROM $tableName"
-    val selected            = tableEnv.sqlQuery(sql)
-    val result: TableResult = selected.execute()
-    val rows                = result.collect().asScala.toList
+    val viewName = s"dq_rules_${System.nanoTime()}"
+    tableEnv.createTemporaryView(viewName, table)
 
-    rows.map {
+    val sql      = s"SELECT `$column` FROM `$viewName`"
+    val selected = tableEnv.sqlQuery(sql)
+    val rows     = drain(selected.execute())
+
+    rows.flatMap {
       row =>
         val json = Option(row.getField(0)).map(_.toString).getOrElse("")
-        RuleLoader.fromJsonString(json).head
+        RuleLoader.fromJsonString(json)
     }
   }
 
@@ -90,7 +95,7 @@ object FlinkRuleLoader {
     val missing  = required -- cols
     require(missing.isEmpty, s"Missing required columns: ${missing.mkString(", ")}")
 
-    val rows = result.collect().asScala.toList
+    val rows = drain(result)
 
     rows.map {
       row =>

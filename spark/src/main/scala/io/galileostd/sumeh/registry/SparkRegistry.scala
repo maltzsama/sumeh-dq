@@ -65,7 +65,7 @@ object SparkRegistry {
     "has_std"              -> (AggregationAnalyzer, AggregationConstraint),
     "has_cardinality"      -> (AggregationAnalyzer, AggregationConstraint),
     "validate_date_format" -> (DateFormatAnalyzer, GenericConstraint),
-    "validate_schema"      -> (SchemaAnalyzer, AggregationConstraint),
+    "validate_schema"      -> (SchemaAnalyzer, SchemaConstraint),
     "satisfies"            -> (SatisfiesAnalyzer, GenericConstraint)
   )
 

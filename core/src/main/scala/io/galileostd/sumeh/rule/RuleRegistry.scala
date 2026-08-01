@@ -14,6 +14,9 @@ object RuleRegistry {
   // ROW-level rules work in both batch and streaming
   private val row = Set("spark", "spark-streaming", "flink", "flink-streaming")
 
+  // Row rules that require state/windowing (not available in the stateless Flink streaming engine)
+  private val streamingImpossible = Set("spark", "spark-streaming", "flink")
+
   // TABLE-level aggregations only work in batch (no streaming)
   private val batch = Set("spark", "flink")
 
@@ -22,10 +25,24 @@ object RuleRegistry {
     RuleEntry("is_complete", "ROW", "completeness", "Checks that field has no null values", row),
     RuleEntry("are_complete", "ROW", "completeness", "Checks that multiple fields have no null values", row),
     // Uniqueness
-    RuleEntry("is_unique", "ROW", "uniqueness", "Checks that field values are unique", row),
-    RuleEntry("are_unique", "ROW", "uniqueness", "Checks that combination of fields is unique", row),
-    RuleEntry("is_primary_key", "ROW", "uniqueness", "Alias for is_unique", row, aliasOf = Some("is_unique")),
-    RuleEntry("is_composite_key", "ROW", "uniqueness", "Alias for are_unique", row, aliasOf = Some("are_unique")),
+    RuleEntry("is_unique", "ROW", "uniqueness", "Checks that field values are unique", streamingImpossible),
+    RuleEntry("are_unique", "ROW", "uniqueness", "Checks that combination of fields is unique", streamingImpossible),
+    RuleEntry(
+      "is_primary_key",
+      "ROW",
+      "uniqueness",
+      "Alias for is_unique",
+      streamingImpossible,
+      aliasOf = Some("is_unique")
+    ),
+    RuleEntry(
+      "is_composite_key",
+      "ROW",
+      "uniqueness",
+      "Alias for are_unique",
+      streamingImpossible,
+      aliasOf = Some("are_unique")
+    ),
     // Comparison
     RuleEntry("is_equal", "ROW", "comparison", "Checks if value equals specified threshold", row),
     RuleEntry("is_equal_than", "ROW", "comparison", "Checks if value equals another column", row),
@@ -68,7 +85,7 @@ object RuleRegistry {
     RuleEntry("is_on_sunday", "ROW", "date", "Checks if date is Sunday", row),
     RuleEntry("validate_date_format", "ROW", "date", "Checks if date string matches expected format", row),
     // SQL
-    RuleEntry("satisfies", "ROW", "sql", "Validates custom SQL condition", row),
+    RuleEntry("satisfies", "ROW", "sql", "Validates custom SQL condition", streamingImpossible),
     // Aggregation — batch only, no streaming
     RuleEntry("has_min", "TABLE", "aggregation", "Validates column minimum value", batch),
     RuleEntry("has_max", "TABLE", "aggregation", "Validates column maximum value", batch),

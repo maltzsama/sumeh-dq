@@ -61,16 +61,16 @@ object SparkSchemaValidator {
         val info = scala.collection.mutable.Map[String, Any](
           "raw_type" -> field.dataType.typeName,
           "nullable" -> field.nullable,
-          "comment"  -> field.metadata.getString("comment") // empty string if absent
+          "comment"  -> (if (field.metadata.contains("comment")) field.metadata.getString("comment") else "")
         )
 
         field.dataType match {
+          case at: ArrayType if at.elementType.isInstanceOf[StructType] =>
+            info("nested_fields") = extractSchemaFromStructType(at.elementType.asInstanceOf[StructType])
           case at: ArrayType =>
             info("element_type") = toCanonical(at.elementType)
           case st: StructType =>
             info("nested_fields") = extractSchemaFromStructType(st)
-          case at: ArrayType if at.elementType.isInstanceOf[StructType] =>
-            info("nested_fields") = extractSchemaFromStructType(at.elementType.asInstanceOf[StructType])
           case _ =>
         }
 
@@ -127,7 +127,7 @@ object SparkSchemaValidator {
 
         case Some(actual) =>
           // Type check
-          val canonExpected = colDef.expectedType.toLowerCase
+          val canonExpected = canonExpectedType(colDef.expectedType)
           val canonActual = toCanonical(
             // best-effort: map raw_type string back to DataType for canonical check
             rawToDataType(actual.getOrElse("raw_type", "").toString)
@@ -185,6 +185,12 @@ object SparkSchemaValidator {
   // -------------------------------------------------------------------------
   // Helpers
   // -------------------------------------------------------------------------
+
+  /** Normalize an expected type so it compares against the canonical actual type (struct/map → complex). */
+  private def canonExpectedType(t: String): String = {
+    val low = t.toLowerCase
+    if (low == "struct" || low == "map") "complex" else low
+  }
 
   private def rawToDataType(raw: String): DataType = raw.toLowerCase.trim match {
     case "byte" | "tinyint"            => ByteType

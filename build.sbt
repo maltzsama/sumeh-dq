@@ -1,9 +1,11 @@
 ThisBuild / organization := "io.galileostd"
 ThisBuild / version      := "0.1.0-SNAPSHOT"
 
+ThisBuild / Test / parallelExecution := false
+
 lazy val core = (project in file("core"))
   .settings(
-    name               := "sumeh-dq-core",
+    name               := "sumeh-core",
     scalaVersion       := "2.13.14",
     crossScalaVersions := Seq("2.12.18", "2.13.14"),
     libraryDependencies ++= Seq(
@@ -18,7 +20,7 @@ lazy val sparkVersion = settingKey[String]("Spark version")
 lazy val spark = (project in file("spark"))
   .dependsOn(core)
   .settings(
-    name         := "sumeh-dq-spark",
+    name         := "sumeh-spark",
     scalaVersion := "2.13.14",
     sparkVersion := sys.props.getOrElse("spark.version", "4.1.2"),
     crossScalaVersions := {
@@ -37,7 +39,7 @@ lazy val flinkVersion = settingKey[String]("Flink version")
 lazy val flink = (project in file("flink"))
   .dependsOn(core)
   .settings(
-    name               := "sumeh-dq-flink",
+    name               := "sumeh-flink",
     scalaVersion       := "2.13.14",
     crossScalaVersions := Seq("2.12.18", "2.13.14"),
     flinkVersion       := sys.props.getOrElse("flink.version", "2.2.0"),

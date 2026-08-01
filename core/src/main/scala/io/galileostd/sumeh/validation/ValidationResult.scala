@@ -59,3 +59,23 @@ final case class ValidationResult(
   override def toString: String =
     s"ValidationResult($checkType on $fieldName: $status)"
 }
+
+object ValidationResult {
+
+  /** Result for a rule that was not executed (execute=false, wrong level, unsupported engine, etc). */
+  def skipped(
+      checkType: String,
+      field: Either[String, List[String]],
+      level: ValidationLevel,
+      category: String,
+      reason: String
+  ): ValidationResult =
+    ValidationResult(
+      checkType = checkType,
+      field = field,
+      level = level,
+      category = category,
+      status = ValidationStatus.SKIPPED,
+      message = Some(s"Skipped: $reason")
+    )
+}

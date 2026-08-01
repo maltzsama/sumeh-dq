@@ -99,7 +99,12 @@ object AggregationConstraint extends SparkConstraint {
       case io.galileostd.sumeh.rule.LongValue(l)   => l.toDouble
     }
 
-    val passed = expected.forall(exp => metric.value == exp)
+    val passed = expected.forall {
+      exp =>
+        if (exp == 0) metric.value == exp
+        else if (rule.threshold > 0) Math.abs(metric.value - exp) / exp <= rule.threshold
+        else metric.value == exp
+    }
 
     ValidationResult(
       id = UUID.randomUUID().toString,
@@ -112,6 +117,29 @@ object AggregationConstraint extends SparkConstraint {
       message =
         if (passed) None
         else Some(s"${rule.checkType}: expected ${expected.getOrElse("?")} but got ${metric.value}"),
+      metadata = metric.metadata
+    )
+  }
+}
+
+// ============================================================================
+// Schema (TABLE level)
+// ============================================================================
+
+object SchemaConstraint extends SparkConstraint {
+  def check(metric: MetricResult, rule: RuleDefinition): ValidationResult = {
+    val passed = metric.metadata.get("passed").exists(_.asInstanceOf[Boolean])
+    ValidationResult(
+      id = UUID.randomUUID().toString,
+      checkType = rule.checkType,
+      field = rule.field,
+      level = ValidationLevel.TABLE,
+      category = rule.category,
+      status = if (passed) ValidationStatus.PASS else ValidationStatus.FAIL,
+      actualValue = Some(metric.value),
+      message =
+        if (passed) None
+        else Some(s"validate_schema: schema does not match contract (${metric.metadata.get("type_errors")})"),
       metadata = metric.metadata
     )
   }

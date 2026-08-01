@@ -121,14 +121,16 @@ object RuleDefinition {
       .get("execute")
       .map {
         case b: Boolean => b
-        case s: String  => Set("true", "1", "yes", "y", "t").contains(s.toLowerCase)
-        case _          => true
+        case s: String =>
+          val t = s.trim.toLowerCase
+          t.isEmpty || Set("true", "1", "yes", "y", "t").contains(t)
+        case _ => true
       }
       .getOrElse(true)
 
     val updatedAt = data.get("updated_at").flatMap(parseTimestamp)
 
-    val metadata = data.view.filterKeys(k => !knownFields.contains(k)).toMap
+    val metadata = data.filterNot { case (k, _) => knownFields.contains(k) }
 
     val checkType = data
       .get("check_type")
@@ -185,6 +187,20 @@ object RuleDefinition {
     case d: LocalDate                                      => Some(DateValue(d))
     case dt: LocalDateTime                                 => Some(DateTimeValue(dt))
     case list: List[_]                                     => Some(ListValue(list.flatMap(v => parseValue(v))))
+    case s: String if s.startsWith("StringValue(") && s.endsWith(")") =>
+      Some(StringValue(s.stripPrefix("StringValue(").stripSuffix(")")))
+    case s: String if s.startsWith("LongValue(") && s.endsWith(")") =>
+      parseValue(s.stripPrefix("LongValue(").stripSuffix(")")).collect { case l: LongValue => l }
+    case s: String if s.startsWith("DoubleValue(") && s.endsWith(")") =>
+      parseValue(s.stripPrefix("DoubleValue(").stripSuffix(")")).collect { case d: DoubleValue => d }
+    case s: String if s.startsWith("BoolValue(") && s.endsWith(")") =>
+      parseValue(s.stripPrefix("BoolValue(").stripSuffix(")")).collect { case b: BoolValue => b }
+    case s: String if s.startsWith("DateValue(") && s.endsWith(")") =>
+      parseValue(s.stripPrefix("DateValue(").stripSuffix(")")).collect { case d: DateValue => d }
+    case s: String if s.startsWith("DateTimeValue(") && s.endsWith(")") =>
+      parseValue(s.stripPrefix("DateTimeValue(").stripSuffix(")")).collect { case dt: DateTimeValue => dt }
+    case s: String if s.startsWith("ListValue(") && s.endsWith(")") =>
+      parseValue(s.stripPrefix("ListValue(").stripSuffix(")"))
     case s: String =>
       val trimmed = s.trim
       if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
@@ -195,13 +211,18 @@ object RuleDefinition {
         Try(LocalDate.parse(trimmed))
           .map(d => Some(DateValue(d)))
           .getOrElse(
-            Try(trimmed.toLong)
-              .map(l => Some(LongValue(l)))
+            Try(LocalDateTime.parse(trimmed))
+              .map(dt => Some(DateTimeValue(dt)))
               .getOrElse(
-                Try(trimmed.toDouble)
-                  .map(d => Some(DoubleValue(d)))
+                Try(trimmed.toLong)
+                  .map(l => Some(LongValue(l)))
                   .getOrElse(
-                    Some(StringValue(trimmed))
+                    Try(trimmed.toDouble)
+                      .map(d => Some(DoubleValue(d)))
+                      .getOrElse(
+                        if (trimmed == "true" || trimmed == "false") Some(BoolValue(trimmed.toBoolean))
+                        else Some(StringValue(trimmed))
+                      )
                   )
               )
           )
@@ -217,11 +238,44 @@ object RuleDefinition {
 }
 
 /** ADT for rule values — replaces Python's Any-typed value field. */
-sealed trait RuleValue
-final case class StringValue(v: String)          extends RuleValue
-final case class LongValue(v: Long)              extends RuleValue
-final case class DoubleValue(v: Double)          extends RuleValue
-final case class BoolValue(v: Boolean)           extends RuleValue
-final case class DateValue(v: LocalDate)         extends RuleValue
-final case class DateTimeValue(v: LocalDateTime) extends RuleValue
-final case class ListValue(v: List[RuleValue])   extends RuleValue
+sealed trait RuleValue {
+
+  /** Lossless export form used by RuleLoader (round-trips through parseValue). */
+  def toTaggedString: String
+}
+
+object RuleValue {
+
+  /** Converts a RuleValue to a plain JVM value (Spark F.lit-friendly: dates as java.sql.Date). */
+  def toAny(v: RuleValue): Any = v match {
+    case StringValue(s)    => s
+    case LongValue(l)      => l
+    case DoubleValue(d)    => d
+    case BoolValue(b)      => b
+    case DateValue(d)      => java.sql.Date.valueOf(d)
+    case DateTimeValue(dt) => java.sql.Timestamp.valueOf(dt)
+    case ListValue(items)  => items.map(toAny)
+  }
+}
+
+final case class StringValue(v: String) extends RuleValue {
+  def toTaggedString: String = s"StringValue($v)"
+}
+final case class LongValue(v: Long) extends RuleValue {
+  def toTaggedString: String = s"LongValue($v)"
+}
+final case class DoubleValue(v: Double) extends RuleValue {
+  def toTaggedString: String = s"DoubleValue($v)"
+}
+final case class BoolValue(v: Boolean) extends RuleValue {
+  def toTaggedString: String = s"BoolValue($v)"
+}
+final case class DateValue(v: LocalDate) extends RuleValue {
+  def toTaggedString: String = s"DateValue($v)"
+}
+final case class DateTimeValue(v: LocalDateTime) extends RuleValue {
+  def toTaggedString: String = s"DateTimeValue($v)"
+}
+final case class ListValue(v: List[RuleValue]) extends RuleValue {
+  def toTaggedString: String = s"ListValue([${v.map(_.toTaggedString).mkString(",")}])"
+}

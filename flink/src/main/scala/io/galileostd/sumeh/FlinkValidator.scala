@@ -14,12 +14,10 @@ object FlinkValidator {
       rules: Seq[RuleDefinition]
   ): ValidatedFlinkStream = {
 
-    val rowRules = rules.filter(_.isApplicableForLevel("ROW"))
-
     val gTag = new OutputTag[Row]("_dq_good") {}
     val eTag = new OutputTag[Row]("_dq_errors") {}
 
-    val processed = stream.process(new DQProcessFunction(rowRules, gTag, eTag))
+    val processed = stream.process(new DQProcessFunction(rules, gTag, eTag))
 
     new ValidatedFlinkStream(processed, eTag, gTag)
   }

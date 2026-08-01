@@ -1,10 +1,10 @@
 package io.galileostd.sumeh.rule
 
+import java.time.LocalDate
+
 import io.galileostd.sumeh.exception.SumehException
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
-
-import java.time.LocalDate
 
 class RuleDefinitionSpec extends AnyWordSpec with Matchers {
 
@@ -133,51 +133,61 @@ class RuleDefinitionSpec extends AnyWordSpec with Matchers {
   "RuleDefinition.fromMap" should {
 
     "create rule from map" in {
-      val rule = RuleDefinition.fromMap(Map(
-        "field"      -> "email",
-        "check_type" -> "is_complete",
-        "threshold"  -> "1.0"
-      ))
+      val rule = RuleDefinition.fromMap(
+        Map(
+          "field"      -> "email",
+          "check_type" -> "is_complete",
+          "threshold"  -> "1.0"
+        )
+      )
       rule.field shouldBe Left("email")
       rule.checkType shouldBe "is_complete"
       rule.threshold shouldBe 1.0
     }
 
     "preserve extra fields as metadata" in {
-      val rule = RuleDefinition.fromMap(Map(
-        "field"        -> "email",
-        "check_type"   -> "is_complete",
-        "environment"  -> "prod",
-        "table_name"   -> "users"
-      ))
+      val rule = RuleDefinition.fromMap(
+        Map(
+          "field"       -> "email",
+          "check_type"  -> "is_complete",
+          "environment" -> "prod",
+          "table_name"  -> "users"
+        )
+      )
       rule.metadata("environment") shouldBe "prod"
       rule.metadata("table_name") shouldBe "users"
     }
 
     "parse execute=true string" in {
-      val rule = RuleDefinition.fromMap(Map(
-        "field"      -> "email",
-        "check_type" -> "is_complete",
-        "execute"    -> "true"
-      ))
+      val rule = RuleDefinition.fromMap(
+        Map(
+          "field"      -> "email",
+          "check_type" -> "is_complete",
+          "execute"    -> "true"
+        )
+      )
       rule.execute shouldBe true
     }
 
     "parse execute=false string" in {
-      val rule = RuleDefinition.fromMap(Map(
-        "field"      -> "email",
-        "check_type" -> "is_complete",
-        "execute"    -> "false"
-      ))
+      val rule = RuleDefinition.fromMap(
+        Map(
+          "field"      -> "email",
+          "check_type" -> "is_complete",
+          "execute"    -> "false"
+        )
+      )
       rule.execute shouldBe false
     }
 
     "default threshold to 1.0 on invalid value" in {
-      val rule = RuleDefinition.fromMap(Map(
-        "field"      -> "email",
-        "check_type" -> "is_complete",
-        "threshold"  -> "not_a_number"
-      ))
+      val rule = RuleDefinition.fromMap(
+        Map(
+          "field"      -> "email",
+          "check_type" -> "is_complete",
+          "threshold"  -> "not_a_number"
+        )
+      )
       rule.threshold shouldBe 1.0
     }
 
@@ -229,6 +239,167 @@ class RuleDefinitionSpec extends AnyWordSpec with Matchers {
       val str  = rule.toString
       str should include("email")
       str should include("is_complete")
+    }
+  }
+
+  "RuleLoader round-trip" should {
+
+    import io.galileostd.sumeh.config.RuleLoader
+
+    "round-trip values through CSV losslessly" in {
+      val rule = RuleDefinition.validated(
+        Left("status"),
+        "is_contained_in",
+        value = Some(ListValue(List(StringValue("active"), StringValue("inactive"), StringValue("pending")))),
+        threshold = 0.9
+      )
+      val back = RuleLoader.fromCsvString(RuleLoader.toCsv(List(rule)))
+      back should have size 1
+      back.head.value shouldBe rule.value
+      back.head.threshold shouldBe rule.threshold
+      back.head.checkType shouldBe rule.checkType
+    }
+
+    "round-trip values through JSON losslessly" in {
+      val rules = List(
+        RuleDefinition.validated(Left("age"), "is_greater_than", value = Some(LongValue(18))),
+        RuleDefinition.validated(Left("avg"), "has_mean", value = Some(DoubleValue(29.4))),
+        RuleDefinition.validated(Left("dt"), "is_equal", value = Some(DateValue(LocalDate.of(2020, 1, 1)))),
+        RuleDefinition.validated(Left("flag"), "is_equal", value = Some(BoolValue(true))),
+        RuleDefinition.validated(
+          Left("status"),
+          "is_contained_in",
+          value = Some(ListValue(List(StringValue("active"), StringValue("inactive"))))
+        )
+      )
+      val back = RuleLoader.fromJsonString(RuleLoader.toJson(rules))
+      back should have size rules.size
+      back.map(_.value) shouldBe rules.map(_.value)
+    }
+
+    "parse a single JSON object (not wrapped in an array)" in {
+      val json = """{"field": "email", "check_type": "is_complete"}"""
+      val back = RuleLoader.fromJsonString(json)
+      back should have size 1
+      back.head.checkType shouldBe "is_complete"
+    }
+  }
+
+  "RuleValue.toTaggedString / parseValue round-trip" should {
+
+    "round-trip every value type" in {
+      val values = List[RuleValue](
+        StringValue("abc"),
+        LongValue(42L),
+        DoubleValue(3.14),
+        BoolValue(true),
+        BoolValue(false),
+        DateValue(LocalDate.of(2020, 1, 1)),
+        DateTimeValue(java.time.LocalDateTime.of(2020, 1, 1, 10, 30)),
+        ListValue(List(StringValue("a"), LongValue(1)))
+      )
+      values.foreach(v => RuleDefinition.parseValue(v.toTaggedString) shouldBe Some(v))
+    }
+  }
+
+  "RuleValue.toAny" should {
+
+    "convert scalars to plain JVM values" in {
+      RuleValue.toAny(StringValue("s")) shouldBe "s"
+      RuleValue.toAny(LongValue(1L)) shouldBe 1L
+      RuleValue.toAny(DoubleValue(1.5)) shouldBe 1.5
+      RuleValue.toAny(BoolValue(true)) shouldBe true
+    }
+
+    "convert dates to java.sql.Date" in {
+      RuleValue.toAny(DateValue(LocalDate.of(2020, 1, 1))) shouldBe java.sql.Date.valueOf("2020-01-01")
+    }
+
+    "convert timestamps to java.sql.Timestamp" in {
+      val dt = java.time.LocalDateTime.of(2020, 1, 1, 10, 0)
+      RuleValue.toAny(DateTimeValue(dt)) shouldBe java.sql.Timestamp.valueOf(dt)
+    }
+
+    "convert lists element-wise" in {
+      RuleValue.toAny(ListValue(List(LongValue(1), LongValue(2)))) shouldBe List(1L, 2L)
+    }
+  }
+
+  "RuleDefinition.parseValue" should {
+
+    "parse tagged value strings" in {
+      RuleDefinition.parseValue("LongValue(5)") shouldBe Some(LongValue(5))
+      RuleDefinition.parseValue("BoolValue(true)") shouldBe Some(BoolValue(true))
+      RuleDefinition.parseValue("DateValue(2020-01-01)") shouldBe Some(DateValue(LocalDate.of(2020, 1, 1)))
+    }
+
+    "parse literal true/false strings as booleans" in {
+      RuleDefinition.parseValue("true") shouldBe Some(BoolValue(true))
+      RuleDefinition.parseValue("false") shouldBe Some(BoolValue(false))
+    }
+
+    "parse a list of numbers" in {
+      RuleDefinition.parseValue("[18, 120]") shouldBe Some(ListValue(List(LongValue(18), LongValue(120))))
+    }
+
+    "parse a quoted list of strings" in {
+      RuleDefinition.parseValue("[\"active\",\"inactive\"]") shouldBe
+      Some(ListValue(List(StringValue("active"), StringValue("inactive"))))
+    }
+  }
+
+  "RuleDefinition.parseField" should {
+
+    "normalize a quoted string" in {
+      RuleDefinition.parseField("  'email'  ") shouldBe Left("email")
+    }
+
+    "parse an empty string as empty field" in {
+      RuleDefinition.parseField("") shouldBe Left("")
+    }
+
+    "fall back to toString for other types" in {
+      RuleDefinition.parseField(42) shouldBe Left("42")
+    }
+  }
+
+  "RuleDefinition.fromMap" should {
+
+    "parse a multi-field bracket notation" in {
+      val rule = RuleDefinition.fromMap(Map("field" -> "[id, name]", "check_type" -> "are_complete"))
+      rule.field shouldBe Right(List("id", "name"))
+    }
+
+    "parse updated_at" in {
+      val rule = RuleDefinition.fromMap(
+        Map(
+          "field"      -> "email",
+          "check_type" -> "is_complete",
+          "updated_at" -> "2024-01-01T10:00:00"
+        )
+      )
+      rule.updatedAt shouldBe defined
+    }
+
+    "ignore updated_at when unparseable" in {
+      val rule = RuleDefinition.fromMap(Map("field" -> "email", "check_type" -> "is_complete", "updated_at" -> "nope"))
+      rule.updatedAt shouldBe None
+    }
+
+    "parse execute from 0/1 strings" in {
+      RuleDefinition
+        .fromMap(Map("field" -> "a", "check_type" -> "is_complete", "execute" -> "0"))
+        .execute shouldBe false
+      RuleDefinition.fromMap(Map("field" -> "a", "check_type" -> "is_complete", "execute" -> "1")).execute shouldBe true
+    }
+  }
+
+  "RuleDefinition.isApplicableForLevel" should {
+
+    "ignore _LEVEL suffixes" in {
+      val rule = RuleDefinition.validated(Left("email"), "is_complete")
+      rule.isApplicableForLevel("row_level") shouldBe true
+      rule.isApplicableForLevel("table_level") shouldBe false
     }
   }
 }

@@ -1,9 +1,9 @@
 package io.galileostd.sumeh.flink.internal
 
+import java.time.format.DateTimeFormatter
 import java.time.LocalDate
 
 import io.galileostd.sumeh.rule.{ DoubleValue, ListValue, LongValue, RuleDefinition, StringValue }
-import io.galileostd.sumeh.validation.ValidationStatus
 import org.apache.flink.streaming.api.functions.ProcessFunction
 import org.apache.flink.types.Row
 import org.apache.flink.util.{ Collector, OutputTag }
@@ -20,65 +20,83 @@ private[flink] class DQProcessFunction(
       out: Collector[Row]
   ): Unit = {
 
-    val errors = scala.collection.mutable.ListBuffer[String]()
-
-    for (rule <- rules)
-      rule.skipReason("ROW", "flink") match {
-        case Some(_) => // skip silently
-        case None =>
-          try {
-            val passed = checkRule(row, rule)
-            if (!passed) errors += buildErrorMessage(rule)
-          } catch {
-            case e: Exception =>
-              errors += s"ERROR[${rule.checkType}]: ${e.getMessage}"
-          }
-      }
-
     val fieldCount = row.getArity
-    val enriched   = Row.withNames()
+    val names      = row.getFieldNames(true).toArray().map(_.asInstanceOf[String])
+    val values     = (0 until fieldCount).map(i => names(i) -> row.getField(i)).toMap
 
-    (0 until fieldCount).foreach {
-      i =>
-        val name = row.getFieldNames(true).toArray()(i).asInstanceOf[String]
-        enriched.setField(name, row.getField(i))
-    }
+    val (errors, skipped) = DQProcessFunction.evaluate(values, rules)
 
+    val enriched = Row.withNames()
+    names.foreach(n => enriched.setField(n, values(n)))
     enriched.setField("_dq_errors", errors.mkString("|"))
+    enriched.setField("_dq_skipped", skipped.mkString("|"))
 
     if (errors.isEmpty) ctx.output(goodTag, enriched)
     else ctx.output(errorTag, enriched)
 
     out.collect(enriched)
   }
+}
+
+private[flink] object DQProcessFunction {
+
+  /**
+   * Pure row-level evaluation of a single record: returns (errors, skippedReasons). Kept free of Flink runtime types so
+   * the rule logic can be unit tested without a cluster.
+   */
+  private[flink] def evaluate(
+      values: Map[String, Any],
+      rules: Seq[RuleDefinition]
+  ): (List[String], List[String]) = {
+    val errors  = scala.collection.mutable.ListBuffer[String]()
+    val skipped = scala.collection.mutable.ListBuffer[String]()
+
+    for (rule <- rules)
+      if (!rule.isApplicableForLevel("ROW")) {
+        skipped += s"${rule.checkType}:TABLE-level rules are not supported in streaming"
+      } else {
+        rule.skipReason("ROW", "flink-streaming") match {
+          case Some(reason) => skipped += s"${rule.checkType}:$reason"
+          case None =>
+            try
+              if (!checkRule(values, rule)) errors += buildErrorMessage(rule)
+            catch {
+              case e: Exception => errors += s"ERROR[${rule.checkType}]: ${e.getMessage}"
+            }
+        }
+      }
+
+    (errors.toList, skipped.toList)
+  }
 
   // -------------------------------------------------------------------------
   // Rule evaluation — pure row-level, no aggregation
   // -------------------------------------------------------------------------
 
-  private def checkRule(row: Row, rule: RuleDefinition): Boolean = {
+  private def checkRule(values: Map[String, Any], rule: RuleDefinition): Boolean = {
     val field     = rule.field.fold(identity, _.head)
-    val rawValue  = row.getField(field)
+    val rawValue  = values.getOrElse(field, null)
     val checkType = rule.checkType
 
-    if (rawValue == null && checkType != "is_complete" && checkType != "is_legit")
+    if (
+      rawValue == null &&
+      checkType != "is_complete" &&
+      checkType != "is_legit" &&
+      checkType != "validate_date_format"
+    )
       return true // null values skip non-completeness checks (consistent with Spark)
 
     checkType match {
       // Completeness
       case "is_complete" | "are_complete" =>
         val fields = rule.field.fold(List(_), identity)
-        fields.forall(f => row.getField(f) != null)
-
-      // Uniqueness — not meaningful in stateless streaming
-      case "is_unique" | "are_unique" | "is_primary_key" | "is_composite_key" =>
-        true // skip: uniqueness requires state, use Flink StatefulFunction separately
+        fields.forall(f => values.getOrElse(f, null) != null)
 
       // Comparison
       case "is_positive"    => toDouble(rawValue) > 0
       case "is_negative"    => toDouble(rawValue) < 0
-      case "is_in_millions" => toDouble(rawValue) >= 1_000_000L
-      case "is_in_billions" => toDouble(rawValue) >= 1_000_000_000L
+      case "is_in_millions" => toDouble(rawValue) >= 1000000L
+      case "is_in_billions" => toDouble(rawValue) >= 1000000000L
 
       case "is_equal" =>
         toDouble(rawValue) == ruleValueToDouble(rule.value)
@@ -100,7 +118,8 @@ private[flink] class DQProcessFunction(
 
       case "is_equal_than" =>
         val other = rule.value.collect { case StringValue(s) => s }.getOrElse("")
-        rawValue.toString == row.getField(other).toString
+        Option(rawValue).map(_.toString).getOrElse("") ==
+          Option(values.getOrElse(other, null)).map(_.toString).getOrElse("")
 
       // Membership
       case "is_contained_in" | "is_in" =>
@@ -151,7 +170,20 @@ private[flink] class DQProcessFunction(
         val target = rule.value.collect { case StringValue(s) => s }.getOrElse("")
         toDate(rawValue).isBefore(LocalDate.parse(target))
 
-      case _ => true // unknown check type: pass through
+      case "validate_date_format" =>
+        if (rawValue == null) true
+        else {
+          val format = rule.value.collect { case StringValue(s) => s }.getOrElse("")
+          try {
+            LocalDate.parse(rawValue.toString, DateTimeFormatter.ofPattern(format))
+            true
+          } catch {
+            case _: Exception => false
+          }
+        }
+
+      case other =>
+        throw new IllegalArgumentException(s"'$other' not implemented for the Flink streaming engine")
     }
   }
 

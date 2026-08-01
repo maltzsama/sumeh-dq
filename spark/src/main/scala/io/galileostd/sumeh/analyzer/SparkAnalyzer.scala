@@ -138,7 +138,7 @@ object ComparisonAnalyzer extends SparkAnalyzer {
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field     = rule.field.fold(identity, _.head)
     val checkType = rule.checkType
-    val threshold = ruleValueToAny(rule.value)
+    val threshold = rule.value.map(RuleValue.toAny).orNull
     requireField(df, field)
 
     val failCond = checkType match {
@@ -172,13 +172,6 @@ object ComparisonAnalyzer extends SparkAnalyzer {
       metadata = Map("fail_count" -> failCount, "total_count" -> total, "threshold" -> threshold)
     )
   }
-
-  private def ruleValueToAny(v: Option[RuleValue]): Any = v match {
-    case Some(StringValue(s)) => s
-    case Some(LongValue(l))   => l
-    case Some(DoubleValue(d)) => d
-    case _                    => null
-  }
 }
 
 object BetweenAnalyzer extends SparkAnalyzer {
@@ -188,7 +181,7 @@ object BetweenAnalyzer extends SparkAnalyzer {
 
     val (minVal, maxVal) = rule.value match {
       case Some(ListValue(lo :: hi :: Nil)) =>
-        (ruleValueToAny(Some(lo)), ruleValueToAny(Some(hi)))
+        (RuleValue.toAny(lo), RuleValue.toAny(hi))
       case _ =>
         throw new IllegalArgumentException("is_between requires value=[min, max]")
     }
@@ -212,13 +205,6 @@ object BetweenAnalyzer extends SparkAnalyzer {
       totalRows = total,
       metadata = Map("fail_count" -> failCount, "min" -> minVal, "max" -> maxVal)
     )
-  }
-
-  private def ruleValueToAny(v: Option[RuleValue]): Any = v match {
-    case Some(StringValue(s)) => s
-    case Some(LongValue(l))   => l
-    case Some(DoubleValue(d)) => d
-    case _                    => null
   }
 }
 
@@ -559,10 +545,7 @@ object SchemaAnalyzer extends SparkAnalyzer {
     import io.galileostd.sumeh.spark.schema.SparkSchemaValidator
     import upickle.default._
 
-    val schemaMap = read[Map[String, ujson.Value]](schemaJson).map {
-      case (k, ujson.Str(s)) => k -> s
-      case (k, v)            => k -> v.toString
-    }
+    val schemaMap = read[Map[String, ujson.Value]](schemaJson).map { case (k, v) => k -> ujsonToAny(v) }
     val schemaDef = SchemaDef.fromMap(schemaMap)
     val report    = SparkSchemaValidator.validate(df, schemaDef)
 
@@ -579,6 +562,15 @@ object SchemaAnalyzer extends SparkAnalyzer {
         "extra_cols"      -> report.extraCols
       )
     )
+  }
+
+  private def ujsonToAny(v: ujson.Value): Any = v match {
+    case ujson.Str(s)  => s
+    case ujson.Num(n)  => if (n == n.toLong) n.toLong else n
+    case ujson.Bool(b) => b
+    case ujson.Null    => null
+    case ujson.Arr(a)  => a.toList.map(ujsonToAny)
+    case ujson.Obj(o)  => o.map { case (k, vv) => k -> ujsonToAny(vv) }.toMap
   }
 }
 

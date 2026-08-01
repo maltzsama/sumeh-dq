@@ -17,18 +17,30 @@ class RuleRegistrySpec extends AnyWordSpec with Matchers {
 
     "contain all known rules" in {
       val known = Seq(
-        "is_complete", "are_complete", "is_unique", "are_unique",
-        "is_between", "is_positive", "is_negative",
-        "is_contained_in", "not_contained_in",
-        "has_pattern", "is_legit",
-        "is_today", "is_past_date", "is_future_date",
-        "has_mean", "has_min", "has_max", "has_sum", "has_cardinality",
-        "satisfies", "validate_schema"
+        "is_complete",
+        "are_complete",
+        "is_unique",
+        "are_unique",
+        "is_between",
+        "is_positive",
+        "is_negative",
+        "is_contained_in",
+        "not_contained_in",
+        "has_pattern",
+        "is_legit",
+        "is_today",
+        "is_past_date",
+        "is_future_date",
+        "has_mean",
+        "has_min",
+        "has_max",
+        "has_sum",
+        "has_cardinality",
+        "satisfies",
+        "validate_schema"
       )
       val registered = RuleRegistry.listRules()
-      known.foreach { rule =>
-        registered should contain(rule)
-      }
+      known.foreach(rule => registered should contain(rule))
     }
 
     "return a RuleEntry for known rule" in {
@@ -80,9 +92,7 @@ class RuleRegistrySpec extends AnyWordSpec with Matchers {
 
     "contain all alias rules" in {
       val aliases = Seq("is_primary_key", "is_composite_key", "is_in", "not_in", "is_yesterday")
-      aliases.foreach { alias =>
-        RuleRegistry.getRule(alias) shouldBe defined
-      }
+      aliases.foreach(alias => RuleRegistry.getRule(alias) shouldBe defined)
     }
 
     "return rules by category" in {
@@ -95,6 +105,36 @@ class RuleRegistrySpec extends AnyWordSpec with Matchers {
       val tableRules = RuleRegistry.byLevel("TABLE")
       tableRules should not be empty
       tableRules.foreach(_.level shouldBe "TABLE")
+    }
+
+    "not support flink-streaming for uniqueness rules" in {
+      RuleRegistry.isSupported("is_unique", "flink-streaming") shouldBe false
+      RuleRegistry.isSupported("is_unique", "flink") shouldBe true
+      RuleRegistry.isSupported("are_unique", "flink-streaming") shouldBe false
+    }
+
+    "not support flink-streaming for satisfies" in {
+      RuleRegistry.isSupported("satisfies", "flink-streaming") shouldBe false
+      RuleRegistry.isSupported("satisfies", "spark") shouldBe true
+    }
+
+    "not support streaming engines for validate_schema" in {
+      RuleRegistry.isSupported("validate_schema", "spark-streaming") shouldBe false
+      RuleRegistry.isSupported("validate_schema", "flink-streaming") shouldBe false
+      RuleRegistry.isSupported("validate_schema", "spark") shouldBe true
+    }
+
+    "resolve aliases to their target check type" in {
+      RuleRegistry.getRule("is_primary_key").get.aliasOf shouldBe Some("is_unique")
+      RuleRegistry.getRule("is_composite_key").get.aliasOf shouldBe Some("are_unique")
+      RuleRegistry.getRule("is_in").get.aliasOf shouldBe Some("is_contained_in")
+      RuleRegistry.getRule("not_in").get.aliasOf shouldBe Some("not_contained_in")
+      RuleRegistry.getRule("is_yesterday").get.aliasOf shouldBe Some("is_t_minus_1")
+    }
+
+    "filter by level ignoring case" in {
+      RuleRegistry.byLevel("table") should not be empty
+      RuleRegistry.byLevel("table") should have size RuleRegistry.byLevel("TABLE").size
     }
   }
 }

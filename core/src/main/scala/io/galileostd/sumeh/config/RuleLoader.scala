@@ -37,18 +37,23 @@ object RuleLoader {
   }
 
   def fromJsonString(json: String): List[RuleDefinition] = {
-    import upickle.default.*
+    import upickle.default._
 
-    Try(read[List[Map[String, ujson.Value]]](json))
-      .getOrElse(List.empty)
-      .map {
-        row =>
-          val strMap = row.map {
-            case (k, v) =>
-              k -> jsonValueToString(v)
-          }
-          RuleDefinition.fromMap(strMap)
-      }
+    if (json == null || json.trim.isEmpty) return List.empty
+
+    val parsed = Try(ujson.read(json)).getOrElse(ujson.Null)
+
+    val rows: List[ujson.Obj] = parsed match {
+      case arr: ujson.Arr => arr.value.toList.collect { case o: ujson.Obj => o }
+      case obj: ujson.Obj => List(obj)
+      case _              => List.empty
+    }
+
+    rows.map {
+      row =>
+        val strMap = row.value.map { case (k, v) => k -> jsonValueToString(v) }.toMap
+        RuleDefinition.fromMap(strMap)
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -59,7 +64,7 @@ object RuleLoader {
     val header = "field,check_type,value,threshold,execute,level,category"
     val lines = rules.map {
       r =>
-        val value     = r.value.map(_.toString).getOrElse("")
+        val value     = r.value.map(_.toTaggedString).getOrElse("")
         val threshold = r.threshold.toString
         val execute   = r.execute.toString
         val level     = r.level
@@ -88,7 +93,7 @@ object RuleLoader {
           "level"      -> ujson.Str(r.level),
           "category"   -> ujson.Str(r.category)
         ) ++
-          r.value.map(v => "value" -> ujson.Str(v.toString)).toMap ++
+          r.value.map(v => "value" -> ruleValueToJson(v)).toMap ++
           r.updatedAt.map(dt => "updated_at" -> ujson.Str(dt.toString)).toMap
 
         // Metadata: converte Any pra string
@@ -168,5 +173,15 @@ object RuleLoader {
     case ujson.Null     => ""
     case ujson.Arr(arr) => arr.map(jsonValueToString).mkString("[", ",", "]")
     case ujson.Obj(obj) => obj.map { case (k, v) => s"$k:${jsonValueToString(v)}" }.mkString("{", ",", "}")
+  }
+
+  private def ruleValueToJson(v: io.galileostd.sumeh.rule.RuleValue): ujson.Value = v match {
+    case io.galileostd.sumeh.rule.StringValue(s)    => ujson.Str(s)
+    case io.galileostd.sumeh.rule.LongValue(l)      => ujson.Num(l.toDouble)
+    case io.galileostd.sumeh.rule.DoubleValue(d)    => ujson.Num(d)
+    case io.galileostd.sumeh.rule.BoolValue(b)      => ujson.Bool(b)
+    case io.galileostd.sumeh.rule.DateValue(d)      => ujson.Str(d.toString)
+    case io.galileostd.sumeh.rule.DateTimeValue(dt) => ujson.Str(dt.toString)
+    case io.galileostd.sumeh.rule.ListValue(items)  => ujson.Arr.from(items.map(ruleValueToJson))
   }
 }

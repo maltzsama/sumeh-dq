@@ -14,4 +14,8 @@ object ValidationStatus {
     override def toString = "ERROR"
   }
 
+  case object SKIPPED extends ValidationStatus {
+    override def toString = "SKIPPED"
+  }
+
 }

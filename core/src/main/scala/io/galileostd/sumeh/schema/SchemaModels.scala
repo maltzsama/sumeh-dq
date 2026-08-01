@@ -46,14 +46,22 @@ object ColumnDef {
       ColumnDef(
         name = name,
         expectedType = map.getOrElse("type", "string").toString,
-        isOptional = map.getOrElse("is_optional", false).asInstanceOf[Boolean],
-        nullable = map.getOrElse("nullable", true).asInstanceOf[Boolean],
+        isOptional = asBool(map.getOrElse("is_optional", false)),
+        nullable = asBool(map.getOrElse("nullable", true)),
         elementType = map.get("element_type").map(_.toString),
-        requireComment = map.getOrElse("require_comment", false).asInstanceOf[Boolean],
+        requireComment = asBool(map.getOrElse("require_comment", false)),
         expectedComment = map.get("expected_comment").map(_.toString),
         fields = nested
       )
     case _ => ColumnDef(name = name, expectedType = "string")
+  }
+
+  private def asBool(v: Any): Boolean = v match {
+    case b: Boolean => b
+    case s: String  => Set("true", "1", "yes", "y", "t").contains(s.trim.toLowerCase)
+    case n: Number  => n.doubleValue() != 0
+    case null       => false
+    case _          => false
   }
 }
 

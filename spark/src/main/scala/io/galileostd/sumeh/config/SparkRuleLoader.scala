@@ -40,10 +40,10 @@ object SparkRuleLoader {
 
     df.select(column)
       .collect()
-      .map {
+      .flatMap {
         row =>
           val json = Option(row.getString(0)).getOrElse("")
-          RuleLoader.fromJsonString(json).head
+          RuleLoader.fromJsonString(json)
       }
       .toList
   }

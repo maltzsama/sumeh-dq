@@ -233,12 +233,8 @@ object SparkValidator {
     }
   }
 
-  private def ruleValueToAny(v: Option[io.galileostd.sumeh.rule.RuleValue]): Any = v match {
-    case Some(io.galileostd.sumeh.rule.StringValue(s)) => s
-    case Some(io.galileostd.sumeh.rule.LongValue(l))   => l
-    case Some(io.galileostd.sumeh.rule.DoubleValue(d)) => d
-    case _                                             => null
-  }
+  private def ruleValueToAny(v: Option[io.galileostd.sumeh.rule.RuleValue]): Any =
+    v.map(io.galileostd.sumeh.rule.RuleValue.toAny).orNull
 
   private def listValues(v: Option[io.galileostd.sumeh.rule.RuleValue]): Seq[Any] = v match {
     case Some(io.galileostd.sumeh.rule.ListValue(items)) => items.map(v => ruleValueToAny(Some(v)))
@@ -246,14 +242,12 @@ object SparkValidator {
   }
 
   private def skippedResult(rule: RuleDefinition, level: ValidationLevel, reason: String) =
-    ValidationResult(
-      id = UUID.randomUUID().toString,
+    ValidationResult.skipped(
       checkType = rule.checkType,
       field = rule.field,
       level = level,
       category = rule.category,
-      status = ValidationStatus.ERROR,
-      message = Some(s"Skipped: $reason")
+      reason = reason
     )
 
   private def errorResult(rule: RuleDefinition, level: ValidationLevel, msg: String) =

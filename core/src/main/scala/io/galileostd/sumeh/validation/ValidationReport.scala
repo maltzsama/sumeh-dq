@@ -38,13 +38,20 @@ final case class ValidationReport[DF](
     dfValidated: Option[DF] = None,
     generatedSql: Option[String] = None
 ) {
-  def passed: List[ValidationResult] = results.filter(_.status == ValidationStatus.PASS)
-  def failed: List[ValidationResult] = results.filter(_.status == ValidationStatus.FAIL)
-  def errors: List[ValidationResult] = results.filter(_.status == ValidationStatus.ERROR)
+  def passed: List[ValidationResult]  = results.filter(_.status == ValidationStatus.PASS)
+  def failed: List[ValidationResult]  = results.filter(_.status == ValidationStatus.FAIL)
+  def errors: List[ValidationResult]  = results.filter(_.status == ValidationStatus.ERROR)
+  def skipped: List[ValidationResult] = results.filter(_.status == ValidationStatus.SKIPPED)
 
-  def passRate: Double =
-    if (results.isEmpty) 1.0
-    else passed.size.toDouble / results.size
+  /**
+   * Fraction of evaluated (non-skipped) validations that passed. Rules that were skipped (execute=false, wrong level,
+   * unsupported engine) neither pass nor fail and are excluded. Returns 1.0 when there is nothing to evaluate.
+   */
+  def passRate: Double = {
+    val evaluated = results.size - skipped.size
+    if (evaluated == 0) 1.0
+    else passed.size.toDouble / evaluated
+  }
 
   /**
    * Split validated DataFrame into (good, bad). Delegates to the engine-specific wrapper.
@@ -76,6 +83,7 @@ final case class ValidationReport[DF](
     "passed"            -> passed.size,
     "failed"            -> failed.size,
     "errors"            -> errors.size,
+    "skipped"           -> skipped.size,
     "pass_rate"         -> passRate,
     "validations" -> results.map {
       r =>

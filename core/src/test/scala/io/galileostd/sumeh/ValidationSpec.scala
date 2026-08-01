@@ -10,34 +10,34 @@ class ValidationSpec extends AnyWordSpec with Matchers {
   // -------------------------------------------------------------------------
 
   def makeResult(
-                  checkType: String = "is_complete",
-                  field: String = "email",
-                  status: ValidationStatus = ValidationStatus.PASS,
-                  passRate: Option[Double] = Some(1.0),
-                  violatingRowIds: List[Long] = List.empty,
-                  message: Option[String] = None,
-                  level: ValidationLevel = ValidationLevel.ROW,
-                  category: String = "completeness"
-                ): ValidationResult = ValidationResult(
-    checkType       = checkType,
-    field           = Left(field),
-    status          = status,
-    passRate        = passRate,
+      checkType: String = "is_complete",
+      field: String = "email",
+      status: ValidationStatus = ValidationStatus.PASS,
+      passRate: Option[Double] = Some(1.0),
+      violatingRowIds: List[Long] = List.empty,
+      message: Option[String] = None,
+      level: ValidationLevel = ValidationLevel.ROW,
+      category: String = "completeness"
+  ): ValidationResult = ValidationResult(
+    checkType = checkType,
+    field = Left(field),
+    status = status,
+    passRate = passRate,
     violatingRowIds = violatingRowIds,
-    message         = message,
-    level           = level,
-    category        = category
+    message = message,
+    level = level,
+    category = category
   )
 
   def makeReport(
-                  results: List[ValidationResult] = List.empty,
-                  totalRows: Long = 100L,
-                  engine: String = "spark"
-                ): ValidationReport[Nothing] = ValidationReport(
-    results         = results,
-    totalRows       = totalRows,
+      results: List[ValidationResult] = List.empty,
+      totalRows: Long = 100L,
+      engine: String = "spark"
+  ): ValidationReport[Nothing] = ValidationReport(
+    results = results,
+    totalRows = totalRows,
     executionTimeMs = 12.5,
-    engine          = engine
+    engine = engine
   )
 
   // -------------------------------------------------------------------------
@@ -47,9 +47,10 @@ class ValidationSpec extends AnyWordSpec with Matchers {
   "ValidationStatus" should {
 
     "have correct string representations" in {
-      ValidationStatus.PASS.toString  shouldBe "PASS"
-      ValidationStatus.FAIL.toString  shouldBe "FAIL"
+      ValidationStatus.PASS.toString shouldBe "PASS"
+      ValidationStatus.FAIL.toString shouldBe "FAIL"
       ValidationStatus.ERROR.toString shouldBe "ERROR"
+      ValidationStatus.SKIPPED.toString shouldBe "SKIPPED"
     }
   }
 
@@ -60,12 +61,12 @@ class ValidationSpec extends AnyWordSpec with Matchers {
   "ValidationLevel" should {
 
     "have correct string representations" in {
-      ValidationLevel.ROW.toString   shouldBe "ROW"
+      ValidationLevel.ROW.toString shouldBe "ROW"
       ValidationLevel.TABLE.toString shouldBe "TABLE"
     }
 
     "parse from string" in {
-      ValidationLevel.fromString("ROW")   shouldBe ValidationLevel.ROW
+      ValidationLevel.fromString("ROW") shouldBe ValidationLevel.ROW
       ValidationLevel.fromString("TABLE") shouldBe ValidationLevel.TABLE
     }
 
@@ -85,7 +86,7 @@ class ValidationSpec extends AnyWordSpec with Matchers {
     "have unique ids" in {
       val r1 = ValidationResult()
       val r2 = ValidationResult()
-      r1.id should not equal r2.id
+      (r1.id should not).equal(r2.id)
     }
 
     "default status to ERROR" in {
@@ -208,7 +209,7 @@ class ValidationSpec extends AnyWordSpec with Matchers {
     "contain required keys" in {
       val s = makeReport(List(makeResult())).summary()
       Seq("timestamp", "engine", "total_rows", "pass_rate", "passed", "failed", "errors", "validations")
-        .foreach(k => s should contain key k)
+        .foreach(k => (s should contain).key(k))
     }
 
     "count correctly" in {
@@ -225,9 +226,9 @@ class ValidationSpec extends AnyWordSpec with Matchers {
     }
 
     "cap sample violating ids" in {
-      val ids    = (0L until 200L).toList
-      val result = makeResult(status = ValidationStatus.FAIL, violatingRowIds = ids)
-      val s      = makeReport(List(result)).summary(maxSampleIds = 50)
+      val ids         = (0L until 200L).toList
+      val result      = makeResult(status = ValidationStatus.FAIL, violatingRowIds = ids)
+      val s           = makeReport(List(result)).summary(maxSampleIds = 50)
       val validations = s("validations").asInstanceOf[List[Map[String, Any]]]
       validations.head("sample_violating_ids").asInstanceOf[List[_]] should have size 50
     }
@@ -264,6 +265,72 @@ class ValidationSpec extends AnyWordSpec with Matchers {
       )
       val str = makeReport(results).toString
       str should include("2")
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // ValidationStatus.SKIPPED
+  // -------------------------------------------------------------------------
+
+  "ValidationResult.skipped" should {
+
+    "create a SKIPPED result with reason" in {
+      val r = ValidationResult.skipped(
+        checkType = "is_unique",
+        field = Left("id"),
+        level = ValidationLevel.ROW,
+        category = "uniqueness",
+        reason = "requires state"
+      )
+      r.status shouldBe ValidationStatus.SKIPPED
+      r.message.get should include("requires state")
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // ValidationReport — skipped results
+  // -------------------------------------------------------------------------
+
+  "ValidationReport.skipped" should {
+
+    "return only SKIPPED results" in {
+      val results = List(
+        makeResult(status = ValidationStatus.PASS),
+        makeResult(status = ValidationStatus.SKIPPED),
+        makeResult(status = ValidationStatus.SKIPPED)
+      )
+      makeReport(results).skipped should have size 2
+    }
+  }
+
+  "ValidationReport.passRate with skipped" should {
+
+    "exclude skipped results from the denominator" in {
+      val results = List(
+        makeResult(status = ValidationStatus.PASS),
+        makeResult(status = ValidationStatus.FAIL),
+        makeResult(status = ValidationStatus.SKIPPED),
+        makeResult(status = ValidationStatus.SKIPPED)
+      )
+      makeReport(results).passRate shouldBe 0.5
+    }
+
+    "be 1.0 when everything is skipped" in {
+      val results = List(makeResult(status = ValidationStatus.SKIPPED))
+      makeReport(results).passRate shouldBe 1.0
+    }
+  }
+
+  "ValidationReport.summary with skipped" should {
+
+    "count skipped validations" in {
+      val results = List(
+        makeResult(status = ValidationStatus.PASS),
+        makeResult(status = ValidationStatus.SKIPPED)
+      )
+      val s = makeReport(results).summary()
+      s("skipped") shouldBe 1
+      (s should contain).key("skipped")
     }
   }
 }
