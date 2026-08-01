@@ -19,6 +19,10 @@ class ValidatedSparkDataFrame(private val df: DataFrame) {
    * Good rows have an empty (or null) `_dq_errors`; bad rows have at least one entry. The good side drops the error
    * column; the bad side keeps it so you can see which rule failed and why.
    *
+   * Note: `threshold` only affects the status of each [[io.galileostd.sumeh.validation.ValidationResult]]. Rows that
+   * violate a rule are always marked in `_dq_errors`, even when the rule passes the threshold. A report with pass rate
+   * 1.0 can still have rows in the `bad` DataFrame.
+   *
    * Args: errorColumn: Name of the errors column (default `"_dq_errors"`).
    *
    * Returns: A `(good, bad)` tuple of DataFrames.

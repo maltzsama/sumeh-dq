@@ -1177,5 +1177,37 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       report.results.count(_.status == ValidationStatus.ERROR) shouldBe 1
       report.results.count(_.status == ValidationStatus.PASS) shouldBe 4
     }
+
+    "mark violating rows even when the rule passes the threshold" in {
+      val df = spark.createDataFrame(
+        spark.sparkContext.parallelize((1 to 99).map(i => Row(i, s"user$i")) :+ Row(100, null)),
+        StructType(
+          Seq(StructField("id", IntegerType, nullable = true), StructField("name", StringType, nullable = true))
+        )
+      )
+      val rules  = Seq(RuleDefinition.validated(Left("name"), "is_complete", threshold = 0.98))
+      val report = SparkValidator.validate(df, rules)
+
+      report.failed shouldBe empty
+      val (good, bad) = report.dfValidated.get.splitByErrors()
+      bad.count() shouldBe 1
+      good.count() shouldBe 99
+    }
+
+    "not mark any row when there is no violation" in {
+      val df = spark.createDataFrame(
+        spark.sparkContext.parallelize(Seq(Row(1, "alice"), Row(2, "bob"))),
+        StructType(
+          Seq(StructField("id", IntegerType, nullable = true), StructField("name", StringType, nullable = true))
+        )
+      )
+      val rules  = Seq(RuleDefinition.validated(Left("name"), "is_complete", threshold = 1.0))
+      val report = SparkValidator.validate(df, rules)
+
+      report.failed shouldBe empty
+      val (good, bad) = report.dfValidated.get.splitByErrors()
+      bad.count() shouldBe 0
+      good.count() shouldBe 2
+    }
   }
 }

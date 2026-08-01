@@ -107,6 +107,10 @@ object SparkValidator {
    * aggregation are SKIPPED with a reason (surfaced in the `_dq_skipped` column and `report.results`), and evaluated
    * row rules carry no in-stream verdict.
    *
+   * Note: `threshold` only affects the status of each [[io.galileostd.sumeh.validation.ValidationResult]]. Rows that
+   * violate a rule are always marked in `_dq_errors`, even when the rule passes the threshold. A report with pass rate
+   * 1.0 can still have rows in the `bad` DataFrame.
+   *
    * Args: df: The DataFrame to validate (batch or streaming). rules: The rules to run.
    *
    * Returns: A report with per-rule results and the validated wrapper for splitting.
@@ -218,7 +222,9 @@ object SparkValidator {
     // Annotate _dq_errors in a single withColumn over the original df
     // -------------------------------------------------------------------------
 
-    val markedRules  = executable.zip(simpleResults).filter(_._2.status == ValidationStatus.FAIL)
+    // Every executed ROW rule marks its violating rows — threshold only governs
+    // the report status, never which rows land in `_dq_errors`.
+    val markedRules  = executable.zip(simpleResults)
     val errorEntries = markedRules.map { case (rule, result) => F.when(FailCondition(rule), errorStruct(rule, result)) }
 
     var workDf =
@@ -241,14 +247,12 @@ object SparkValidator {
             val result     = constraint.check(metric, rule)
             results += result
 
-            if (result.status == ValidationStatus.FAIL) {
-              val failCond = FailCondition(rule)
-              workDf = workDf.withColumn(
-                "_dq_errors",
-                F.when(failCond, F.array_union(F.col("_dq_errors"), F.array(errorStruct(rule, result))))
-                  .otherwise(F.col("_dq_errors"))
-              )
-            }
+            val failCond = FailCondition(rule)
+            workDf = workDf.withColumn(
+              "_dq_errors",
+              F.when(failCond, F.array_union(F.col("_dq_errors"), F.array(errorStruct(rule, result))))
+                .otherwise(F.col("_dq_errors"))
+            )
           } catch {
             case e: Exception =>
               results += errorResult(rule, ValidationLevel.ROW, e.getMessage)
