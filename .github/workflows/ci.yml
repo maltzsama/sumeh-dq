@@ -40,40 +40,52 @@ jobs:
             scala: '2.13.16'
             opts: ''
 
-          # Spark — default version from build.sbt
-          - module: spark
-            scala: '2.13.16'
-            opts: ''
-
-          # Spark — 3.x line under Scala 2.12
+          # Spark 3.5.0 (floor) — both Scala versions
           - module: spark
             scala: '2.12.18'
-            opts: '-Dspark.version=3.5.5'
-
-          # Spark — 3.x line under Scala 2.13
+            opts: '-Dspark.version=3.5.0'
           - module: spark
             scala: '2.13.16'
-            opts: '-Dspark.version=3.5.5'
+            opts: '-Dspark.version=3.5.0'
 
-          # Flink — default version from build.sbt
-          - module: flink
+          # Spark 4.x — Scala 2.13 only
+          - module: spark
             scala: '2.13.16'
-            opts: ''
+            opts: '-Dspark.version=4.0.0'
+          - module: spark
+            scala: '2.13.16'
+            opts: '-Dspark.version=4.1.0'
+          - module: spark
+            scala: '2.13.16'
+            opts: '-Dspark.version=4.2.0'
 
-          # Flink — 2.x line under Scala 2.12
+          # Flink 1.20.0 (floor) — both Scala versions
           - module: flink
             scala: '2.12.18'
-            opts: ''
-
-          # Flink — 1.x line (older Kryo; runs via the --add-opens forked tests)
+            opts: '-Dflink.version=1.20.0'
           - module: flink
             scala: '2.13.16'
             opts: '-Dflink.version=1.20.0'
 
-          # Flink — 1.x line under Scala 2.12
+          # Flink 2.x — both Scala versions
           - module: flink
             scala: '2.12.18'
-            opts: '-Dflink.version=1.20.0'
+            opts: '-Dflink.version=2.1.0'
+          - module: flink
+            scala: '2.13.16'
+            opts: '-Dflink.version=2.1.0'
+          - module: flink
+            scala: '2.12.18'
+            opts: '-Dflink.version=2.2.0'
+          - module: flink
+            scala: '2.13.16'
+            opts: '-Dflink.version=2.2.0'
+          - module: flink
+            scala: '2.12.18'
+            opts: '-Dflink.version=2.3.0'
+          - module: flink
+            scala: '2.13.16'
+            opts: '-Dflink.version=2.3.0'
 
     steps:
       - uses: actions/checkout@v4
@@ -154,20 +166,10 @@ jobs:
           GITHUB_PACKAGES: "1"
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
-          # Core — both Scala versions
-          sbt -Dversion="$VERSION" ++2.12.18 core/publish
-          sbt -Dversion="$VERSION" ++2.13.16 core/publish
-          # Spark 3.x line (sumeh-spark3) — both Scala versions
-          sbt -Dversion="$VERSION" -Dspark.version=3.5.5 ++2.12.18 spark/publish
-          sbt -Dversion="$VERSION" -Dspark.version=3.5.5 ++2.13.16 spark/publish
-          # Spark 4.x line (sumeh-spark4) — Scala 2.13 only
-          sbt -Dversion="$VERSION" ++2.13.16 spark/publish
-          # Flink 1.x line (sumeh-flink1) — both Scala versions
-          sbt -Dversion="$VERSION" -Dflink.version=1.20.0 ++2.12.18 flink/publish
-          sbt -Dversion="$VERSION" -Dflink.version=1.20.0 ++2.13.16 flink/publish
-          # Flink 2.x line (sumeh-flink2) — both Scala versions
-          sbt -Dversion="$VERSION" ++2.12.18 flink/publish
-          sbt -Dversion="$VERSION" ++2.13.16 flink/publish
+          # Each artifact is compiled against its engine floor (Spark 3.5.0, Flink 1.20.0)
+          # and cross-built for both Scala versions.
+          sbt -Dversion="$VERSION" ++2.12.18 core/publish spark/publish flink/publish
+          sbt -Dversion="$VERSION" ++2.13.16 core/publish spark/publish flink/publish
 
   docs-check:
     runs-on: ubuntu-latest
