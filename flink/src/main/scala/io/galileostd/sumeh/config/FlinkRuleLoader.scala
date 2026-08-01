@@ -6,14 +6,20 @@ import org.apache.flink.table.api.{ Table, TableEnvironment, TableResult }
 import org.apache.flink.types.Row
 
 /**
- * Loads RuleDefinitions from Flink Tables and TableResults.
+ * Loads `RuleDefinition`s from Flink Tables and TableResults.
  *
- * Required columns: field, check_type. Optional: value, threshold, execute, level, category. Extra columns are
- * preserved as metadata.
+ * Required columns: `field`, `check_type`. Optional: `value`, `threshold`, `execute`, `level`, `category`. Extra
+ * columns are preserved as metadata.
  */
 object FlinkRuleLoader {
 
-  /** Collects all rows of a TableResult and closes the iterator. */
+  /**
+   * Collects all rows of a TableResult and closes the iterator.
+   *
+   * Args: result: The TableResult to drain.
+   *
+   * Returns: A List of all collected rows.
+   */
   private def drain(result: TableResult): List[Row] = {
     val it = result.collect()
     try {
@@ -26,10 +32,11 @@ object FlinkRuleLoader {
   /**
    * Load rules from a Flink Table.
    *
-   * @param table
-   *   A Flink Table (already registered or from a query)
-   * @return
-   *   List of RuleDefinition
+   * Args: table: A Flink Table (already registered or from a query).
+   *
+   * Returns: List of RuleDefinitions.
+   *
+   * Throws: IllegalArgumentException if `field` or `check_type` columns are missing.
    */
   def fromTable(table: Table): List[RuleDefinition] = {
     val fieldNames = table.getSchema.getFieldNames
@@ -55,14 +62,10 @@ object FlinkRuleLoader {
   /**
    * Load rules from a Flink Table that has a single JSON column.
    *
-   * @param table
-   *   The source table (must have a column with JSON)
-   * @param column
-   *   The column name containing JSON
-   * @param tableEnv
-   *   The TableEnvironment (needed for sqlQuery)
-   * @return
-   *   List of RuleDefinition
+   * Args: table: The source table (must have a column with JSON). column: The column name containing JSON. tableEnv:
+   * The TableEnvironment (needed for sqlQuery).
+   *
+   * Returns: List of RuleDefinitions parsed from each JSON row.
    */
   def fromJsonColumn(
       table: Table,
@@ -86,12 +89,12 @@ object FlinkRuleLoader {
   /**
    * Load rules from a TableResult (e.g., from executeSql).
    *
-   * @param result
-   *   TableResult from a query
-   * @param fieldNames
-   *   The field names (must be provided, because TableResult may not expose them cleanly)
-   * @return
-   *   List of RuleDefinition
+   * Args: result: TableResult from a query. fieldNames: The field names (must be provided, because TableResult may not
+   * expose them cleanly).
+   *
+   * Returns: List of RuleDefinitions.
+   *
+   * Throws: IllegalArgumentException if `field` or `check_type` columns are missing.
    */
   def fromTableResult(
       result: TableResult,

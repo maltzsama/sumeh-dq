@@ -10,32 +10,51 @@ import org.apache.spark.sql.{ functions => F, DataFrame }
 // ============================================================================
 
 /**
- * Computes a MetricResult for a rule on a Spark DataFrame — pure computation, no rule opinion.
+ * Computes a `MetricResult` for a rule on a Spark DataFrame.
  *
- * Analyzers are pure: the same input always yields the same output, and they never apply thresholds (that is the
- * Constraint's job).
+ * Analyzers are the "pure computation" half of validation: they aggregate the DataFrame into a metric and have no
+ * opinion about thresholds or pass/fail semantics (that is the Constraint's job). The same input always yields the same
+ * output, which keeps validation deterministic and testable.
  */
 trait SparkAnalyzer {
 
   /**
    * Computes the metric for the given rule.
    *
-   * Args: df: The DataFrame. rule: The rule to analyze.
+   * Args: df: The DataFrame to analyze. rule: The rule whose check determines what to measure.
    *
    * Returns: The computed metric.
    */
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult
 
-  /** Flattened column name(s) of the rule. */
+  /**
+   * Flattened column name(s) of the rule — a single name or a comma-joined list.
+   *
+   * Returns: The rule's `fieldName`.
+   */
   protected def fieldName(rule: RuleDefinition): String =
     rule.field.fold(identity, _.mkString(","))
 
-  /** Throws if the field is not present in the DataFrame. */
+  /**
+   * Throws if the field is not a column of the DataFrame.
+   *
+   * Args: df: The DataFrame. field: The column name to check.
+   *
+   * Throws: IllegalArgumentException when the field is absent.
+   */
   protected def requireField(df: DataFrame, field: String): Unit =
     if (!df.columns.contains(field))
       throw new IllegalArgumentException(s"Field '$field' not found in DataFrame")
 
-  /** Pass rate = (total - failCount) / total; 1.0 when there are no rows. */
+  /**
+   * Pass rate of a metric: `(total - failCount) / total`.
+   *
+   * Returns `1.0` when there are no rows, so an empty dataset passes a rule rather than erroring.
+   *
+   * Args: total: Total row count. failCount: Number of failing rows.
+   *
+   * Returns: The pass rate in `[0.0, 1.0]`.
+   */
   protected def passRate(total: Long, failCount: Long): Double =
     if (total > 0) (total - failCount).toDouble / total else 1.0
 }
@@ -44,8 +63,22 @@ trait SparkAnalyzer {
 // Completeness
 // ============================================================================
 
-/** Analyzer for is_complete — measures null counts on a single field. */
+/**
+ * Analyzer for `is_complete` — the pass rate of a single field having no nulls.
+ *
+ * Counts rows where the field is null and reports the pass rate `1 - null_count/total`.
+ */
 object CompletenessAnalyzer extends SparkAnalyzer {
+
+  /**
+   * Computes the completeness metric for the rule's field.
+   *
+   * Args: df: The DataFrame. rule: A rule with a single-column field.
+   *
+   * Returns: A metric whose `value` is the non-null fraction and whose `metadata` holds `null_count`/`total_count`.
+   *
+   * Throws: IllegalArgumentException when the field is not in the DataFrame.
+   */
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field = rule.field.fold(identity, _.head)
     requireField(df, field)
@@ -70,8 +103,22 @@ object CompletenessAnalyzer extends SparkAnalyzer {
   }
 }
 
-/** Analyzer for are_complete — measures rows where any of several fields is null. */
+/**
+ * Analyzer for `are_complete` — the pass rate of a set of fields being simultaneously non-null.
+ *
+ * A row fails when any of the given fields is null.
+ */
 object MultiFieldCompletenessAnalyzer extends SparkAnalyzer {
+
+  /**
+   * Computes the multi-field completeness metric.
+   *
+   * Args: df: The DataFrame. rule: A rule whose field is `Right(List(...))` of columns.
+   *
+   * Returns: A metric whose `value` is the fraction of rows with no nulls among the fields; `metadata` lists `fields`.
+   *
+   * Throws: IllegalArgumentException when any field is not in the DataFrame.
+   */
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val fields = rule.field.fold(List(_), identity)
     fields.foreach(requireField(df, _))
@@ -102,8 +149,24 @@ object MultiFieldCompletenessAnalyzer extends SparkAnalyzer {
 // Uniqueness
 // ============================================================================
 
-/** Analyzer for is_unique — measures duplicate values of a single field. */
+/**
+ * Analyzer for `is_unique` — the pass rate of a single field having no duplicate values.
+ *
+ * Counts the total rows that participate in a duplicate group and reports `1 - dup/total`. Requires a full scan, so it
+ * is batch-only (the Spark Registry gates it).
+ */
 object UniquenessAnalyzer extends SparkAnalyzer {
+
+  /**
+   * Computes the uniqueness metric for the rule's field.
+   *
+   * Args: df: The DataFrame. rule: A rule with a single-column field.
+   *
+   * Returns: A metric whose `value` is the non-duplicate fraction and whose `metadata` holds
+   * `duplicate_count`/`total_count`.
+   *
+   * Throws: IllegalArgumentException when the field is not in the DataFrame.
+   */
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field = rule.field.fold(identity, _.head)
     requireField(df, field)
@@ -127,8 +190,22 @@ object UniquenessAnalyzer extends SparkAnalyzer {
   }
 }
 
-/** Analyzer for are_unique — measures duplicate combinations of several fields. */
+/**
+ * Analyzer for `are_unique` — the pass rate of a combination of fields having no duplicate combinations.
+ *
+ * Counts rows in duplicate groups by grouping on all the rule's columns together.
+ */
 object MultiFieldUniquenessAnalyzer extends SparkAnalyzer {
+
+  /**
+   * Computes the multi-field uniqueness metric.
+   *
+   * Args: df: The DataFrame. rule: A rule whose field is `Right(List(...))` of columns.
+   *
+   * Returns: A metric whose `value` is the non-duplicate fraction; `metadata` lists `fields`.
+   *
+   * Throws: IllegalArgumentException when any field is not in the DataFrame.
+   */
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val fields = rule.field.fold(List(_), identity)
     fields.foreach(requireField(df, _))
@@ -156,8 +233,26 @@ object MultiFieldUniquenessAnalyzer extends SparkAnalyzer {
 // Comparison
 // ============================================================================
 
-/** Analyzer for comparison rules (is_equal, is_greater_than, is_positive, ...). */
+/**
+ * Analyzer for the comparison rule family: `is_equal`, `is_equal_than`, `is_greater_than`, `is_less_than`,
+ * `is_greater_or_equal_than`, `is_less_or_equal_than`, `is_positive`, `is_negative`, `is_in_millions`,
+ * `is_in_billions`.
+ *
+ * Each `check_type` maps to a column predicate; a row fails when the predicate is false (the fail condition is the
+ * negation of the intended comparison).
+ */
 object ComparisonAnalyzer extends SparkAnalyzer {
+
+  /**
+   * Computes the comparison metric, dispatching on `rule.checkType`.
+   *
+   * Args: df: The DataFrame. rule: A rule with a numeric field and (for most checks) a `value` threshold.
+   *
+   * Returns: A metric whose `value` is the fraction of rows satisfying the comparison; `metadata` holds
+   * `fail_count`/`total_count`/`threshold`.
+   *
+   * Throws: IllegalArgumentException when the field is missing or the `check_type` is not a known comparison.
+   */
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field     = rule.field.fold(identity, _.head)
     val checkType = rule.checkType
@@ -197,8 +292,22 @@ object ComparisonAnalyzer extends SparkAnalyzer {
   }
 }
 
-/** Analyzer for is_between — measures rows outside a [min, max] range. */
+/**
+ * Analyzer for `is_between` — the pass rate of rows whose value lies inside a `[min, max]` range.
+ *
+ * A row fails when it is strictly below `min` or strictly above `max`.
+ */
 object BetweenAnalyzer extends SparkAnalyzer {
+
+  /**
+   * Computes the between metric from the rule's `value` list `[min, max]`.
+   *
+   * Args: df: The DataFrame. rule: A rule whose `value` is a `ListValue` of exactly two elements.
+   *
+   * Returns: A metric whose `value` is the in-range fraction; `metadata` holds `min`/`max`.
+   *
+   * Throws: IllegalArgumentException when the field is missing or `value` is not a two-element list.
+   */
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field = rule.field.fold(identity, _.head)
     requireField(df, field)
@@ -232,8 +341,22 @@ object BetweenAnalyzer extends SparkAnalyzer {
   }
 }
 
-/** Analyzer for is_equal_than — compares a field against another column. */
+/**
+ * Analyzer for `is_equal_than` — the pass rate of rows where a field equals another column.
+ *
+ * A row fails when the two column values differ.
+ */
 object ColumnComparisonAnalyzer extends SparkAnalyzer {
+
+  /**
+   * Computes the column-comparison metric.
+   *
+   * Args: df: The DataFrame. rule: A rule whose `value` names the other column to compare against.
+   *
+   * Returns: A metric whose `value` is the equality fraction; `metadata` holds `compared_to`.
+   *
+   * Throws: IllegalArgumentException when either column is missing or `value` has no column name.
+   */
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field = rule.field.fold(identity, _.head)
     val otherField = rule.value
@@ -268,8 +391,23 @@ object ColumnComparisonAnalyzer extends SparkAnalyzer {
 // Membership
 // ============================================================================
 
-/** Analyzer for membership rules (is_contained_in, not_contained_in, ...). */
+/**
+ * Analyzer for the membership rule family: `is_contained_in` / `is_in` and `not_contained_in` / `not_in`.
+ *
+ * `is_*` fails a row when its value is NOT in the allowed list; `not_*` fails a row when its value IS in the disallowed
+ * list.
+ */
 object MembershipAnalyzer extends SparkAnalyzer {
+
+  /**
+   * Computes the membership metric from the rule's list-valued `value`.
+   *
+   * Args: df: The DataFrame. rule: A rule whose `value` is a `ListValue` of allowed/disallowed items.
+   *
+   * Returns: A metric whose `value` is the pass fraction; `metadata` holds `fail_count` and `values`.
+   *
+   * Throws: IllegalArgumentException when the field is missing or `value` is not a list.
+   */
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field     = rule.field.fold(identity, _.head)
     val checkType = rule.checkType
@@ -315,8 +453,22 @@ object MembershipAnalyzer extends SparkAnalyzer {
 // Pattern
 // ============================================================================
 
-/** Analyzer for has_pattern — measures rows that don't match a regex. */
+/**
+ * Analyzer for `has_pattern` — the pass rate of rows whose value matches a regular expression.
+ *
+ * A row fails when the field does not `rlike` the pattern.
+ */
 object PatternAnalyzer extends SparkAnalyzer {
+
+  /**
+   * Computes the regex-match metric from the rule's pattern `value`.
+   *
+   * Args: df: The DataFrame. rule: A rule whose `value` is a `StringValue` regex.
+   *
+   * Returns: A metric whose `value` is the matching fraction; `metadata` holds `pattern`.
+   *
+   * Throws: IllegalArgumentException when the field is missing or the pattern is not a string.
+   */
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field = rule.field.fold(identity, _.head)
     val pattern = rule.value
@@ -346,8 +498,22 @@ object PatternAnalyzer extends SparkAnalyzer {
   }
 }
 
-/** Analyzer for is_legit — measures null or whitespace-only values. */
+/**
+ * Analyzer for `is_legit` — the pass rate of rows that are non-null and non-blank.
+ *
+ * A row fails when the field is null or trims to an empty string.
+ */
 object LegitAnalyzer extends SparkAnalyzer {
+
+  /**
+   * Computes the "legit" metric for the rule's field.
+   *
+   * Args: df: The DataFrame. rule: A rule with a single-column field.
+   *
+   * Returns: A metric whose `value` is the fraction of non-blank, non-null rows.
+   *
+   * Throws: IllegalArgumentException when the field is not in the DataFrame.
+   */
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field = rule.field.fold(identity, _.head)
     requireField(df, field)
@@ -378,8 +544,26 @@ object LegitAnalyzer extends SparkAnalyzer {
 // Date
 // ============================================================================
 
-/** Analyzer for date rules (is_today, is_past_date, is_on_weekday, all_date_checks, ...). */
+/**
+ * Analyzer for the date rule family: `is_today`, `is_t_minus_1/2/3`, `is_yesterday`, `is_past_date`, `is_future_date`,
+ * `is_on_weekday`, `is_on_weekend`, `is_on_monday`...`is_on_sunday`, and `all_date_checks`.
+ *
+ * All comparisons operate on a parsed date column via `DateExpr.safeToDate` (ANSI-safe, null instead of throwing). Note
+ * `is_on_weekday` fails on Saturday (1) and Sunday (7) because Spark's `dayofweek` starts on Sunday; `is_on_weekend` is
+ * its complement.
+ */
 object DateAnalyzer extends SparkAnalyzer {
+
+  /**
+   * Computes the date metric, dispatching on `rule.checkType`.
+   *
+   * Args: df: The DataFrame. rule: A rule with a date field and one of the supported date `check_type`s.
+   *
+   * Returns: A metric whose `value` is the fraction of rows satisfying the date predicate; `metadata` holds
+   * `fail_count`/`check_type`.
+   *
+   * Throws: IllegalArgumentException when the field is missing or the `check_type` is not a known date check.
+   */
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field     = rule.field.fold(identity, _.head)
     val checkType = rule.checkType
@@ -428,8 +612,22 @@ object DateAnalyzer extends SparkAnalyzer {
   }
 }
 
-/** Analyzer for is_date_between — measures rows outside a [start, end] date range. */
+/**
+ * Analyzer for `is_date_between` — the pass rate of rows whose date lies inside a `[start, end]` range.
+ *
+ * A row fails when its parsed date is strictly before `start` or strictly after `end`.
+ */
 object DateBetweenAnalyzer extends SparkAnalyzer {
+
+  /**
+   * Computes the date-range metric from the rule's `value` list `[start, end]`.
+   *
+   * Args: df: The DataFrame. rule: A rule whose `value` is a `ListValue` of two date strings.
+   *
+   * Returns: A metric whose `value` is the in-range fraction; `metadata` holds `start`/`end`.
+   *
+   * Throws: IllegalArgumentException when the field is missing or `value` is not two date strings.
+   */
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field = rule.field.fold(identity, _.head)
     requireField(df, field)
@@ -462,8 +660,23 @@ object DateBetweenAnalyzer extends SparkAnalyzer {
   }
 }
 
-/** Analyzer for is_date_after / is_date_before — compares a date field against a target date. */
+/**
+ * Analyzer for `is_date_after` / `is_date_before` — the pass rate of rows whose date is after/before a target date.
+ *
+ * `is_date_after` fails a row when its date is on or before the target; `is_date_before` fails when on or after it.
+ */
 object DateComparisonAnalyzer extends SparkAnalyzer {
+
+  /**
+   * Computes the date-comparison metric against the rule's target date `value`.
+   *
+   * Args: df: The DataFrame. rule: A rule whose `value` is a date string; `check_type` is `is_date_after` or
+   * `is_date_before`.
+   *
+   * Returns: A metric whose `value` is the fraction satisfying the comparison; `metadata` holds `target`.
+   *
+   * Throws: IllegalArgumentException when the field is missing, `value` has no date, or the `check_type` is unknown.
+   */
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field     = rule.field.fold(identity, _.head)
     val checkType = rule.checkType
@@ -506,10 +719,23 @@ object DateComparisonAnalyzer extends SparkAnalyzer {
 // ============================================================================
 
 /**
- * Analyzer for TABLE-level aggregations (has_min, has_max, has_sum, has_mean, has_std, has_cardinality, has_entropy,
- * has_infogain).
+ * Analyzer for TABLE-level aggregations: `has_min`, `has_max`, `has_sum`, `has_mean`, `has_std`, `has_cardinality`,
+ * `has_entropy`, `has_infogain`.
+ *
+ * These reduce the whole column to a single number (the metric `value`), which the AggregationConstraint later compares
+ * against the rule's expected `value` within a relative threshold. Batch-only.
  */
 object AggregationAnalyzer extends SparkAnalyzer {
+
+  /**
+   * Computes the requested aggregation of the rule's field.
+   *
+   * Args: df: The DataFrame. rule: A rule with a numeric field and one of the supported aggregation `check_type`s.
+   *
+   * Returns: A metric whose `value` is the aggregated number; `metadata` holds `metric` and `value`.
+   *
+   * Throws: IllegalArgumentException when the field is missing or the `check_type` is unknown.
+   */
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field     = rule.field.fold(identity, _.head)
     val checkType = rule.checkType
@@ -541,7 +767,15 @@ object AggregationAnalyzer extends SparkAnalyzer {
     )
   }
 
-  /** Shannon entropy -Σ pᵢ·log₂(pᵢ) of the field's value distribution. */
+  /**
+   * Shannon entropy `-Σ pᵢ·log₂(pᵢ)` of the field's value distribution.
+   *
+   * Computed over non-null values only. Returns `0.0` for an empty or all-null column.
+   *
+   * Args: df: The DataFrame. field: The column to measure.
+   *
+   * Returns: The entropy in bits, in `[0, log₂(cardinality)]`.
+   */
   private def entropy(df: DataFrame, field: String): Double = {
     val counts = df.select(field).na.drop().groupBy(field).count()
     val total  = counts.agg(F.sum("count")).collect()(0).getAs[Long](0)
@@ -554,7 +788,16 @@ object AggregationAnalyzer extends SparkAnalyzer {
         .getAs[Double](0)
   }
 
-  /** Normalized entropy H / log2(cardinality); 1.0 = uniform, 0.0 = single value. */
+  /**
+   * Normalized entropy `H / log₂(cardinality)`.
+   *
+   * `1.0` means a uniform distribution, `0.0` a single value. Returns `0.0` when the column has fewer than two distinct
+   * non-null values.
+   *
+   * Args: df: The DataFrame. field: The column to measure.
+   *
+   * Returns: The normalized entropy in `[0.0, 1.0]`.
+   */
   private def normalizedEntropy(df: DataFrame, field: String): Double = {
     val h = entropy(df, field)
     val distinct = df
@@ -568,8 +811,22 @@ object AggregationAnalyzer extends SparkAnalyzer {
   }
 }
 
-/** Analyzer for validate_date_format — measures rows that don't parse with the expected format. */
+/**
+ * Analyzer for `validate_date_format` — the pass rate of rows whose string parses with the expected format.
+ *
+ * A row fails when it is non-null but `try_to_timestamp` cannot parse it with the rule's format string.
+ */
 object DateFormatAnalyzer extends SparkAnalyzer {
+
+  /**
+   * Computes the date-format metric from the rule's format `value`.
+   *
+   * Args: df: The DataFrame. rule: A rule whose `value` is a `StringValue` pattern (e.g. `"yyyy-MM-dd"`).
+   *
+   * Returns: A metric whose `value` is the fraction of parseable rows; `metadata` holds `format`.
+   *
+   * Throws: IllegalArgumentException when the field is missing or the format is not a string.
+   */
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field = rule.field.fold(identity, _.head)
     val format = rule.value
@@ -599,8 +856,24 @@ object DateFormatAnalyzer extends SparkAnalyzer {
   }
 }
 
-/** Analyzer for validate_schema — validates the DataFrame schema against a serialized SchemaDef. */
+/**
+ * Analyzer for `validate_schema` — whether the DataFrame schema matches a serialized schema contract.
+ *
+ * The rule's `value` is a JSON string holding a schema contract (see `SchemaDef.fromMap`). The metric `value` is `1.0`
+ * when the schema passes, `0.0` otherwise, with the failure breakdown in `metadata`.
+ */
 object SchemaAnalyzer extends SparkAnalyzer {
+
+  /**
+   * Computes the schema metric by validating the DataFrame against the serialized contract.
+   *
+   * Args: df: The DataFrame. rule: A rule whose `value` is a JSON schema string.
+   *
+   * Returns: A metric whose `value` is `1.0`/`0.0` and whose `metadata` carries `passed`, `missing_cols`,
+   * `type_errors`, `metadata_errors`, and `extra_cols`.
+   *
+   * Throws: IllegalArgumentException when `value` is missing or is not a valid JSON schema string.
+   */
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     // value contém o SchemaDef serializado como JSON string
     val schemaJson = rule.value
@@ -630,7 +903,15 @@ object SchemaAnalyzer extends SparkAnalyzer {
     )
   }
 
-  /** Converts a ujson value into plain JVM types for SchemaDef.fromMap. */
+  /**
+   * Converts a ujson value into plain JVM types for [[io.galileostd.sumeh.schema.SchemaDef.fromMap]].
+   *
+   * Whole numbers become `Long`, everything else keeps its natural type; arrays and objects are converted recursively.
+   *
+   * Args: v: The JSON value.
+   *
+   * Returns: The plain JVM value.
+   */
   private def ujsonToAny(v: ujson.Value): Any = v match {
     case ujson.Str(s)  => s
     case ujson.Num(n)  => if (n == n.toLong) n.toLong else n
@@ -641,8 +922,23 @@ object SchemaAnalyzer extends SparkAnalyzer {
   }
 }
 
-/** Analyzer for satisfies — measures rows that don't match a custom SQL condition. */
+/**
+ * Analyzer for `satisfies` — the pass rate of rows that match a custom SQL condition.
+ *
+ * A row fails when the SQL expression evaluates to false. The condition is evaluated with `F.expr`, so it can reference
+ * any column of the DataFrame.
+ */
 object SatisfiesAnalyzer extends SparkAnalyzer {
+
+  /**
+   * Computes the SQL-condition metric from the rule's condition `value`.
+   *
+   * Args: df: The DataFrame. rule: A rule whose `value` is a `StringValue` SQL expression.
+   *
+   * Returns: A metric whose `value` is the fraction of matching rows; `metadata` holds `condition`.
+   *
+   * Throws: IllegalArgumentException when `value` is not a SQL condition string.
+   */
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val condition = rule.value
       .collect { case StringValue(s) => s }

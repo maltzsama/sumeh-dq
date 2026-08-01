@@ -9,7 +9,7 @@ import org.apache.flink.types.Row
 import org.apache.flink.util.{ Collector, OutputTag }
 
 /**
- * Flink ProcessFunction that evaluates each record against the rules.
+ * Flink `ProcessFunction` that evaluates each record against the rules.
  *
  * Enriches every record with `_dq_errors` and `_dq_skipped` fields, routes good records to the good side output and bad
  * records to the error side output, and also emits the enriched record on the main output. Evaluation is stateless —
@@ -24,7 +24,15 @@ private[flink] class DQProcessFunction(
     errorTag: OutputTag[Row]
 ) extends ProcessFunction[Row, Row] {
 
-  /** Evaluates one record, routes it to the right side output, and emits the enriched row. */
+  /**
+   * Evaluates one record, routes it to the right side output, and emits the enriched row.
+   *
+   * The record's fields are copied into a named row and augmented with `_dq_errors` (pipe-separated) and `_dq_skipped`
+   * (pipe-separated). Good records are routed to `goodTag`, bad records to `errorTag`; both are always emitted on the
+   * main output.
+   *
+   * Args: row: The input record. ctx: The process context used to write side outputs. out: The main output collector.
+   */
   override def processElement(
       row: Row,
       ctx: ProcessFunction[Row, Row]#Context,
@@ -49,12 +57,23 @@ private[flink] class DQProcessFunction(
   }
 }
 
-/** Companion with the pure, cluster-free rule evaluation logic. */
+/**
+ * Companion with the pure, cluster-free rule evaluation logic.
+ *
+ * Kept free of Flink runtime types so the rule logic can be unit tested without a cluster.
+ */
 private[flink] object DQProcessFunction {
 
   /**
-   * Pure row-level evaluation of a single record: returns (errors, skippedReasons). Kept free of Flink runtime types so
-   * the rule logic can be unit tested without a cluster.
+   * Pure row-level evaluation of a single record.
+   *
+   * Returns a `(errors, skippedReasons)` pair. TABLE-level rules are always skipped with an explanatory reason; rules
+   * whose `skipReason` yields a reason are skipped; any exception thrown while evaluating a rule is captured as an
+   * `ERROR[checkType]: message` entry.
+   *
+   * Args: values: Field-name-to-value map of the record. rules: Rules to evaluate.
+   *
+   * Returns: A tuple of error messages and skipped-rule reasons.
    */
   private[flink] def evaluate(
       values: Map[String, Any],
@@ -85,7 +104,19 @@ private[flink] object DQProcessFunction {
   // Rule evaluation — pure row-level, no aggregation
   // -------------------------------------------------------------------------
 
-  /** Checks one row against a single rule — pure row-level logic, no aggregation. */
+  /**
+   * Checks one row against a single rule — pure row-level logic, no aggregation.
+   *
+   * Null values short-circuit non-completeness checks as passing (consistent with Spark), except for completeness,
+   * `is_legit` and `validate_date_format`. Unsupported check types throw.
+   *
+   * Args: values: Field-name-to-value map of the record. rule: The rule to evaluate.
+   *
+   * Returns: True if the record satisfies the rule.
+   *
+   * Throws: IllegalArgumentException if the check type is not implemented for the Flink streaming engine, or if a value
+   * cannot be converted to the type the check requires.
+   */
   private def checkRule(values: Map[String, Any], rule: RuleDefinition): Boolean = {
     val field     = rule.field.fold(identity, _.head)
     val rawValue  = values.getOrElse(field, null)
@@ -202,18 +233,41 @@ private[flink] object DQProcessFunction {
     }
   }
 
-  /** Short "checkType:field" message used in the errors field. */
+  /**
+   * Short `checkType:field` message used in the errors field.
+   *
+   * Args: rule: The failed rule.
+   *
+   * Returns: A message identifying the failed check and the field it targeted.
+   */
   private def buildErrorMessage(rule: RuleDefinition): String =
     s"${rule.checkType}:${rule.fieldName}"
 
-  /** Converts a raw value to Double, throwing on incompatible types. */
+  /**
+   * Converts a raw value to Double, throwing on incompatible types.
+   *
+   * Args: v: The raw value.
+   *
+   * Returns: The value as a Double.
+   *
+   * Throws: IllegalArgumentException if `v` is neither a Number nor a String parseable as a Double.
+   */
   private def toDouble(v: Any): Double = v match {
     case n: Number => n.doubleValue()
     case s: String => s.toDouble
     case _         => throw new IllegalArgumentException(s"Cannot convert $v to Double")
   }
 
-  /** Converts a raw value to LocalDate, throwing on incompatible types. */
+  /**
+   * Converts a raw value to LocalDate, throwing on incompatible types.
+   *
+   * Args: v: The raw value.
+   *
+   * Returns: The value as a LocalDate.
+   *
+   * Throws: IllegalArgumentException if `v` is neither a LocalDate, a java.sql.Date, nor a String parseable as an ISO
+   * date.
+   */
   private def toDate(v: Any): LocalDate = v match {
     case d: LocalDate     => d
     case d: java.sql.Date => d.toLocalDate
@@ -221,14 +275,28 @@ private[flink] object DQProcessFunction {
     case _                => throw new IllegalArgumentException(s"Cannot convert $v to LocalDate")
   }
 
-  /** Converts a raw value to LocalDate, returning null instead of throwing. */
+  /**
+   * Converts a raw value to LocalDate, returning null instead of throwing.
+   *
+   * Args: v: The raw value.
+   *
+   * Returns: The value as a LocalDate, or null if it cannot be parsed.
+   */
   private def safeToDate(v: Any): LocalDate =
     try toDate(v)
     catch {
       case _: Exception => null
     }
 
-  /** Converts a numeric RuleValue to Double, throwing on non-numeric values. */
+  /**
+   * Converts a numeric RuleValue to Double, throwing on non-numeric values.
+   *
+   * Args: v: The optional RuleValue (Long, Double or numeric String).
+   *
+   * Returns: The value as a Double.
+   *
+   * Throws: IllegalArgumentException if `v` is empty or not numeric.
+   */
   private def ruleValueToDouble(v: Option[io.galileostd.sumeh.rule.RuleValue]): Double = v match {
     case Some(LongValue(l))   => l.toDouble
     case Some(DoubleValue(d)) => d
@@ -236,7 +304,13 @@ private[flink] object DQProcessFunction {
     case _                    => throw new IllegalArgumentException(s"Expected numeric RuleValue, got $v")
   }
 
-  /** Extracts the string forms of a ListValue for membership checks. */
+  /**
+   * Extracts the string forms of a ListValue for membership checks.
+   *
+   * Args: v: The optional RuleValue holding the membership list.
+   *
+   * Returns: A Set of the string forms of every item, or an empty Set when `v` is not a ListValue.
+   */
   private def listValuesAsString(v: Option[io.galileostd.sumeh.rule.RuleValue]): Set[String] = v match {
     case Some(ListValue(items)) =>
       items.map {

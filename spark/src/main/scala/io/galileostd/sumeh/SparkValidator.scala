@@ -11,11 +11,20 @@ import org.apache.spark.sql.types.{ ArrayType, StringType, StructField, StructTy
 /**
  * Spark entry point: validates DataFrames using the Bifurcation Pattern.
  *
- * Works on batch AND streaming DataFrames (auto-detected via df.isStreaming). Rules that need state (uniqueness),
+ * Works on batch AND streaming DataFrames (auto-detected via `df.isStreaming`). Rules that need state (uniqueness),
  * custom SQL, or TABLE-level aggregation are skipped with a reason on streaming input — never silently passed.
+ *
+ * Batch: ROW rules are evaluated and failing rows annotated in a `_dq_errors` column in a single pass; TABLE rules run
+ * as aggregations. Streaming: the same `_dq_errors` annotation is applied purely with column expressions (no
+ * aggregation, no `.collect()`), mirroring the Flink engine, and skipped rules are surfaced in a `_dq_skipped` column.
  */
 object SparkValidator {
 
+  /**
+   * Schema of the `_dq_errors` struct attached to each validated row.
+   *
+   * One struct entry per failing rule with `rule_id` and `check_type` fields.
+   */
   private val errorSchema = ArrayType(
     StructType(
       Seq(
@@ -31,15 +40,19 @@ object SparkValidator {
   )
 
   /**
-   * Validate a Spark DataFrame using the Bifurcation Pattern.
+   * Validates a Spark DataFrame using the Bifurcation Pattern.
    *
-   * Single-pass: adds _dq_errors column per row. Use report.split() to separate good/bad rows. Zero .collect() on
-   * row-level data.
+   * Single-pass: adds a `_dq_errors` column per row. Use `report.split()` to separate good/bad rows. Row-level data is
+   * never `.collect()`ed.
    *
-   * Works on batch AND streaming DataFrames (auto-detected via df.isStreaming). On a streaming DataFrame the validation
-   * runs as a pure column-expression transformation — no aggregation, no .collect() — mirroring the Flink engine. Rules
-   * that need state (uniqueness), custom SQL, or TABLE-level aggregation are SKIPPED with a reason (surfaced in the
-   * _dq_skipped column and report.results), and evaluated row rules carry no in-stream verdict.
+   * On a streaming DataFrame the validation runs as a pure column-expression transformation — no aggregation, no
+   * `.collect()` — mirroring the Flink engine. Rules that need state (uniqueness), custom SQL, or TABLE-level
+   * aggregation are SKIPPED with a reason (surfaced in the `_dq_skipped` column and `report.results`), and evaluated
+   * row rules carry no in-stream verdict.
+   *
+   * Args: df: The DataFrame to validate (batch or streaming). rules: The rules to run.
+   *
+   * Returns: A report with per-rule results and the validated wrapper for splitting.
    */
   def validate(
       df: DataFrame,
@@ -53,7 +66,16 @@ object SparkValidator {
   // -------------------------------------------------------------------------
 
   /**
-   * Batch path: analyzers compute metrics, TABLE rules run, and a full report is produced.
+   * Batch validation path.
+   *
+   * ROW rules are evaluated per rule: the analyzer computes a metric, the constraint decides pass/fail, and failing
+   * rows get an error struct appended to `_dq_errors` (reusing the analyzer logic as a column predicate, so the
+   * annotation shares the same single pass). TABLE rules run as aggregations on the annotated DataFrame. Skips,
+   * failures, and errors all land in the report.
+   *
+   * Args: df: The DataFrame to validate. rules: The rules to run.
+   *
+   * Returns: A complete report with the annotated DataFrame attached.
    */
   private def validateBatch(
       df: DataFrame,
@@ -151,7 +173,15 @@ object SparkValidator {
   // -------------------------------------------------------------------------
 
   /**
-   * Streaming path: column-expression annotation only, no eager operations, no aggregations.
+   * Streaming validation path.
+   *
+   * ROW rules are applied as pure column expressions: each failing row gets an error struct appended to `_dq_errors`,
+   * and no rule carries a runtime verdict (there is no finite aggregation on a stream). TABLE rules are always skipped
+   * on a stream, and all skip reasons are joined into a `_dq_skipped` column.
+   *
+   * Args: df: The streaming DataFrame to validate. rules: The rules to run.
+   *
+   * Returns: A report (totalRows `-1L`, engine `"spark-streaming"`) with the annotated DataFrame attached.
    */
   private def validateStreaming(
       df: DataFrame,
@@ -224,7 +254,19 @@ object SparkValidator {
   // Fail conditions per check_type — Column expressions, zero .collect()
   // -------------------------------------------------------------------------
 
-  /** Builds the fail-condition column expression for a rule — pure Spark Columns, zero collect(). */
+  /**
+   * Builds the fail-condition column expression for a rule.
+   *
+   * This is the column-level twin of the batch analyzers: it yields a Boolean Column that is true exactly for rows that
+   * violate the rule, so the `_dq_errors` annotation needs zero `.collect()`. Uniqueness checks use a windowed count;
+   * `validate_schema` always yields false (schema is not a row-level concern).
+   *
+   * Args: df: The DataFrame being annotated. rule: The rule whose violation is tested.
+   *
+   * Returns: A Boolean column expression — true when the row fails the rule.
+   *
+   * Throws: IllegalArgumentException when no fail condition is defined for the rule's `check_type`.
+   */
   private def buildFailCondition(df: DataFrame, rule: RuleDefinition) = {
     import org.apache.spark.sql.Column
     import io.galileostd.sumeh.rule._
@@ -334,17 +376,37 @@ object SparkValidator {
     }
   }
 
-  /** Converts a RuleValue to a plain JVM literal for F.lit(). */
+  /**
+   * Converts a [[io.galileostd.sumeh.rule.RuleValue]] to a plain JVM literal for `F.lit()`.
+   *
+   * Dates become `java.sql.Date`/`java.sql.Timestamp` via [[io.galileostd.sumeh.rule.RuleValue.toAny]].
+   *
+   * Args: v: The optional rule value.
+   *
+   * Returns: A plain JVM literal, or `null` when the value is absent.
+   */
   private def ruleValueToAny(v: Option[io.galileostd.sumeh.rule.RuleValue]): Any =
     v.map(io.galileostd.sumeh.rule.RuleValue.toAny).orNull
 
-  /** Extracts the plain values from a ListValue rule value. */
+  /**
+   * Extracts the plain values from a [[io.galileostd.sumeh.rule.ListValue]] rule value.
+   *
+   * Args: v: The optional rule value.
+   *
+   * Returns: The item literals, or an empty sequence when `v` is not a list.
+   */
   private def listValues(v: Option[io.galileostd.sumeh.rule.RuleValue]): Seq[Any] = v match {
     case Some(io.galileostd.sumeh.rule.ListValue(items)) => items.map(v => ruleValueToAny(Some(v)))
     case _                                               => Seq.empty
   }
 
-  /** Builds a SKIPPED result for a rule. */
+  /**
+   * Builds a SKIPPED result for a rule.
+   *
+   * Args: rule: The rule. level: The level being evaluated. reason: Why the rule was skipped.
+   *
+   * Returns: A SKIPPED [[io.galileostd.sumeh.validation.ValidationResult]].
+   */
   private def skippedResult(rule: RuleDefinition, level: ValidationLevel, reason: String) =
     ValidationResult.skipped(
       checkType = rule.checkType,
@@ -354,7 +416,13 @@ object SparkValidator {
       reason = reason
     )
 
-  /** Builds an ERROR result for a rule. */
+  /**
+   * Builds an ERROR result for a rule.
+   *
+   * Args: rule: The rule. level: The level being evaluated. msg: The error message.
+   *
+   * Returns: An ERROR [[io.galileostd.sumeh.validation.ValidationResult]].
+   */
   private def errorResult(rule: RuleDefinition, level: ValidationLevel, msg: String) =
     ValidationResult(
       id = UUID.randomUUID().toString,

@@ -5,15 +5,11 @@ import scala.util.Try
 import io.galileostd.sumeh.rule.RuleDefinition
 
 /**
- * Load and export RuleDefinition lists from/to strings.
+ * Load and export [[io.galileostd.sumeh.rule.RuleDefinition]] lists from/to strings.
  *
- * PURE PARSING — no I/O, no disk, no S3, no GCS, no Azure, no DBFS.
- *
- * User is responsible for reading from wherever they want:
- *   - S3, GCS, Azure Blob, DBFS, HDFS, JDBC, HTTP, local file, etc
- *   - Then pass the string to fromCsvString() or fromJsonString()
- *
- * Export: toCsv() and toJson() return strings that user can save anywhere.
+ * This is a pure parsing layer — no I/O, no disk, no S3, no GCS, no Azure, no DBFS. The caller is responsible for
+ * reading the raw text from wherever it lives (S3, GCS, DBFS, JDBC, HTTP, local file, ...) and passing it to
+ * `fromCsvString` / `fromJsonString`; `toCsv` / `toJson` return strings the caller can persist anywhere.
  */
 object RuleLoader {
 
@@ -21,7 +17,19 @@ object RuleLoader {
   // LOAD from strings
   // -------------------------------------------------------------------------
 
-  /** Parse rules from a CSV string (`field,check_type,value,threshold,execute,level,category`). */
+  /**
+   * Parses rules from a CSV string.
+   *
+   * Expects a header row with the columns `field,check_type,value,threshold,execute,level,category`. Each subsequent
+   * non-empty line becomes one rule via [[io.galileostd.sumeh.rule.RuleDefinition.fromMap]]; `value` may use the
+   * lossless tagged format (e.g. `LongValue(42)`) from [[toCsv]].
+   *
+   * Args: csv: The raw CSV text, with or without a trailing newline.
+   *
+   * Returns: The parsed rules; an empty list for an empty or header-only input.
+   *
+   * Throws: [[io.galileostd.sumeh.exception.SumehException]] if a row has an unknown or missing `check_type`.
+   */
   def fromCsvString(csv: String): List[RuleDefinition] = {
     val lines = csv.linesIterator.toList
     if (lines.isEmpty) return List.empty
@@ -37,7 +45,19 @@ object RuleLoader {
       }
   }
 
-  /** Parse rules from a JSON string — a single rule object or an array of rule objects. */
+  /**
+   * Parses rules from a JSON string.
+   *
+   * Accepts either a single rule object or an array of rule objects. Values are flattened to strings with
+   * `jsonValueToString` before going through [[io.galileostd.sumeh.rule.RuleDefinition.fromMap]], so a JSON `value` of
+   * `[18, 65]` becomes the list-string `"[18,65]"` and is re-parsed by `parseValue`.
+   *
+   * Args: json: The raw JSON text.
+   *
+   * Returns: The parsed rules; an empty list for null/empty input or non-object JSON.
+   *
+   * Throws: [[io.galileostd.sumeh.exception.SumehException]] if a rule has an unknown or missing `check_type`.
+   */
   def fromJsonString(json: String): List[RuleDefinition] = {
     import upickle.default._
 
@@ -62,7 +82,16 @@ object RuleLoader {
   // EXPORT to strings
   // -------------------------------------------------------------------------
 
-  /** Serialize rules to a CSV string, using the lossless tagged [[RuleValue]] format for `value`. */
+  /**
+   * Serializes rules to a CSV string.
+   *
+   * Writes a header row followed by one line per rule. `value` uses the lossless tagged `RuleValue.toTaggedString`
+   * format so numbers, booleans, and dates survive the round-trip through [[fromCsvString]].
+   *
+   * Args: rules: The rules to serialize.
+   *
+   * Returns: A CSV string with a header row.
+   */
   def toCsv(rules: List[RuleDefinition]): String = {
     val header = "field,check_type,value,threshold,execute,level,category"
     val lines = rules.map {
@@ -85,7 +114,17 @@ object RuleLoader {
     (header +: lines).mkString("\n")
   }
 
-  /** Serialize rules to a JSON array string (metadata and `value` are stringified). */
+  /**
+   * Serializes rules to a JSON array string.
+   *
+   * Each rule becomes an object with `field`, `check_type`, `threshold`, `execute`, `level`, `category`, plus `value`
+   * (in its native JSON form), `updated_at`, and any `metadata` keys. Note: `value` and metadata are stringified, so
+   * this is a lossless-but-not-typed export.
+   *
+   * Args: rules: The rules to serialize.
+   *
+   * Returns: A JSON array string.
+   */
   def toJson(rules: List[RuleDefinition]): String = {
     val arr = rules.map {
       r =>
@@ -116,7 +155,16 @@ object RuleLoader {
   // CSV parsing (internal)
   // -------------------------------------------------------------------------
 
-  /** Parse one CSV line, honoring quoted fields and `""` escapes. */
+  /**
+   * Parses a single CSV line into fields.
+   *
+   * Honors quoted fields: a field wrapped in double quotes may contain commas and newlines, and `""` is treated as a
+   * literal quote. Whitespace around unquoted fields is trimmed.
+   *
+   * Args: line: The raw line.
+   *
+   * Returns: The parsed field values, in order.
+   */
   private def parseCsvLine(line: String): List[String] = {
     val result  = scala.collection.mutable.ListBuffer[String]()
     val current = new StringBuilder
@@ -159,7 +207,16 @@ object RuleLoader {
     result.toList
   }
 
-  /** Quote a CSV field only when it contains a comma, quote, or newline. */
+  /**
+   * Quotes a CSV field only when it needs quoting.
+   *
+   * A field is wrapped in double quotes (with internal quotes doubled) when it contains a comma, a quote, or a newline;
+   * otherwise it is returned unchanged.
+   *
+   * Args: field: The raw field value.
+   *
+   * Returns: The field, quoted if necessary.
+   */
   private def quoteCsv(field: String): String = {
     val needsQuoting = field.contains(",") || field.contains("\"") || field.contains("\n")
     if (needsQuoting) {
@@ -172,7 +229,16 @@ object RuleLoader {
   // JSON helpers (internal)
   // -------------------------------------------------------------------------
 
-  /** Flatten a ujson value to a plain string for [[RuleDefinition.fromMap]]. */
+  /**
+   * Flattens a ujson value to a plain string for [[io.galileostd.sumeh.rule.RuleDefinition.fromMap]].
+   *
+   * Numbers are rendered as integers when whole (e.g. `42` instead of `42.0`). Arrays and objects are flattened to the
+   * compact `"[a,b]"` / `"{k:v}"` forms that `parseField`/`parseValue` understand.
+   *
+   * Args: v: The JSON value.
+   *
+   * Returns: Its string representation.
+   */
   private def jsonValueToString(v: ujson.Value): String = v match {
     case ujson.Str(s)   => s
     case ujson.Num(n)   => if (n == n.toLong) n.toLong.toString else n.toString
@@ -182,7 +248,16 @@ object RuleLoader {
     case ujson.Obj(obj) => obj.map { case (k, v) => s"$k:${jsonValueToString(v)}" }.mkString("{", ",", "}")
   }
 
-  /** Convert a [[RuleValue]] to its ujson representation. */
+  /**
+   * Converts a [[RuleValue]] to its native ujson representation.
+   *
+   * Dates/timestamps become strings, lists become arrays, and numerics stay numeric — the inverse of
+   * [[io.galileostd.sumeh.rule.RuleDefinition.parseValue]].
+   *
+   * Args: v: The rule value.
+   *
+   * Returns: The corresponding ujson value.
+   */
   private def ruleValueToJson(v: io.galileostd.sumeh.rule.RuleValue): ujson.Value = v match {
     case io.galileostd.sumeh.rule.StringValue(s)    => ujson.Str(s)
     case io.galileostd.sumeh.rule.LongValue(l)      => ujson.Num(l.toDouble)

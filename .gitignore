@@ -173,10 +173,7 @@ TempStatsStore/
 # Documentation site
 # ===============================
 
-# MkDocs output
-site/
-
-# Generated scaladoc, staged into the docs tree at build time
+# Generated scaladoc (sbt doc output)
 docs/api/core/
 docs/api/spark/
 docs/api/flink/

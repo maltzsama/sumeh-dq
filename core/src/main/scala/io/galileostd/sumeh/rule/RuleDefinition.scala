@@ -6,12 +6,23 @@ import scala.util.Try
 import io.galileostd.sumeh.exception.SumehException
 
 /**
- * Data quality rule with validation and metadata preservation.
+ * A single data-quality rule.
  *
- * Args: field: Column name(s) to validate checkType: Validation rule type (must exist in RuleRegistry) value: Threshold
- * or comparison value threshold: Pass rate threshold (0.0–1.0) execute: Whether the rule should be executed level:
- * Validation level (auto-populated from registry) category: Rule category (auto-populated from registry) updatedAt:
- * Rule update timestamp metadata: Extra fields from source (preserved)
+ * A `RuleDefinition` couples the declarative inputs (which field(s), which check, with which threshold/value) with
+ * metadata that the engine needs to execute it (level, category). The raw `field`/`checkType`/`value` are exactly what
+ * you'd write in JSON or CSV; `level` and `category` are normally filled in from the [[RuleRegistry]] by the
+ * `validated` constructor so rules stay concise at the call site.
+ *
+ * Use [[RuleDefinition.validated]] to build one with registry validation, or [[RuleDefinition.fromMap]] to parse a
+ * config map. `field` is `Left("col")` for single-column rules and `Right(List("a","b"))` for multi-column rules.
+ *
+ * Args: field: The column name(s) to validate — `Left` for one column, `Right` for several. checkType: The rule type
+ * (e.g. `"is_complete"`); must exist in [[RuleRegistry]]. value: Threshold or comparison payload ([[RuleValue]]),
+ * depending on the rule type. threshold: Pass-rate threshold in `[0.0, 1.0]`; the rule passes when the measured metric
+ * meets it. execute: When `false` the rule is never run and always reported as `SKIPPED`. level: Validation level,
+ * `ROW` or `TABLE` — normally auto-populated by the registry. category: Rule category (e.g. `"completeness"`) —
+ * normally auto-populated by the registry. updatedAt: When the rule was last changed (parsed from `updated_at`).
+ * metadata: Extra keys from the source config, preserved verbatim for round-tripping.
  */
 final case class RuleDefinition(
     field: Either[String, List[String]],
@@ -25,17 +36,43 @@ final case class RuleDefinition(
     metadata: Map[String, Any] = Map.empty
 ) {
 
-  /** Flattened column name(s): single name or comma-joined list. */
+  /**
+   * Flattened column name(s): a single name for `Left`, or a comma-joined string for `Right` (e.g. `"a,b"`).
+   *
+   * Used by CSV/JSON loaders and by `ValidationResult.fieldName` to render multi-column rules compactly.
+   *
+   * Returns: The column name, or comma-joined column names.
+   */
   def fieldName: String = field.fold(identity, _.mkString(","))
 
-  /** Whether this rule applies at the given level (normalizes `ROW`/`ROW_LEVEL` style suffixes). */
+  /**
+   * Whether this rule operates at the given level.
+   *
+   * Both sides are uppercased and a `_LEVEL` suffix is stripped, so `"row"` and `"ROW_LEVEL"` both match the `ROW`
+   * level. This drives the "no silent passes" behaviour: a `TABLE` rule is skipped, never silently run, on streaming
+   * engines.
+   *
+   * Args: targetLevel: The level to test, e.g. `"ROW"` or `"TABLE"`.
+   *
+   * Returns: `true` when the rule's level equals `targetLevel`.
+   */
   def isApplicableForLevel(targetLevel: String): Boolean = {
     val normalized = level.toUpperCase.replace("_LEVEL", "")
     val target     = targetLevel.toUpperCase.replace("_LEVEL", "")
     normalized == target
   }
 
-  /** Reason this rule would be skipped at `targetLevel` on `engine`, or `None` if it can run. */
+  /**
+   * Why this rule would be skipped at `targetLevel` on `engine`.
+   *
+   * The first applicable reason wins: `execute=false`, then a level mismatch, then engine support. When none apply the
+   * rule can run and `None` is returned. Engines call this to decide whether to execute or skip with a reason.
+   *
+   * Args: targetLevel: The level the engine is running at (e.g. `"ROW"`). engine: The engine name (e.g. `"spark"`,
+   * `"flink-streaming"`).
+   *
+   * Returns: A human-readable reason, or `None` if the rule can run.
+   */
   def skipReason(targetLevel: String, engine: String): Option[String] =
     if (!execute) Some("execute=false")
     else if (!isApplicableForLevel(targetLevel))
@@ -44,6 +81,11 @@ final case class RuleDefinition(
       Some(s"Engine '$engine' not supported for rule '$checkType'")
     else None
 
+  /**
+   * Compact human-readable rendering of the rule.
+   *
+   * Returns: A string like `RuleDef(field=email, check=is_complete, level=ROW, category=completeness)`.
+   */
   override def toString: String = {
     val f    = field.fold(identity, cols => s"[${cols.mkString(",")}]")
     val meta = if (metadata.nonEmpty) s", +${metadata.size} meta" else ""
@@ -51,12 +93,25 @@ final case class RuleDefinition(
   }
 }
 
-/** Companion with smart constructors and value/field parsing helpers. */
+/**
+ * Companion with smart constructors and value/field parsing helpers.
+ */
 object RuleDefinition {
 
   /**
-   * Smart constructor — validates against RuleRegistry and enriches level/category from manifest, same as Python's
-   * __post_init__. Throws [[io.galileostd.sumeh.exception.SumehException]] on an unknown `checkType`.
+   * Smart constructor that validates the rule against [[RuleRegistry]].
+   *
+   * Enriches `level` and `category` from the registry manifest (mirroring Python's `__post_init__`), so callers only
+   * need to specify `field`, `checkType`, and any rule-specific `value`/`threshold`. This is the primary way to build a
+   * rule in code — it fails fast on a typo'd `checkType` instead of at validation time.
+   *
+   * Args: field: The column name(s) — `Left` for one, `Right` for several. checkType: The rule type; must exist in the
+   * registry. value: Threshold or comparison value for the rule. threshold: Pass-rate threshold in `[0.0, 1.0]`.
+   * execute: `false` to disable the rule. updatedAt: Rule update timestamp. metadata: Extra keys to preserve.
+   *
+   * Returns: A rule with `level`/`category` populated from the registry.
+   *
+   * Throws: [[io.galileostd.sumeh.exception.SumehException]] when `checkType` is not registered.
    */
   def validated( // ← era apply
       field: Either[String, List[String]],
@@ -89,7 +144,20 @@ object RuleDefinition {
     )
   }
 
-  /** Creates RuleDefinition from a raw Map, preserving unknown keys as metadata. */
+  /**
+   * Creates a [[RuleDefinition]] from a raw config map.
+   *
+   * Parses the known keys (`field`, `check_type`, `value`, `threshold`, `execute`, `level`, `category`, `updated_at`)
+   * and keeps every other key verbatim in `metadata`, so a source config survives a load→export round-trip. Parsing is
+   * lenient: `value` goes through [[parseValue]], `threshold` falls back to `1.0`, `execute` accepts booleans and
+   * truthy strings. The result is passed through [[validated]] for registry validation.
+   *
+   * Args: data: The rule as a key→value map (e.g. a CSV row or JSON object).
+   *
+   * Returns: The parsed rule.
+   *
+   * Throws: [[io.galileostd.sumeh.exception.SumehException]] when `check_type` is missing or unknown.
+   */
   def fromMap(data: Map[String, Any]): RuleDefinition = {
     val knownFields = Set(
       "field",
@@ -139,7 +207,16 @@ object RuleDefinition {
     )
   }
 
-  /** Parse a `field` value into a single-column `Left` or multi-column `Right`, supporting list/`[a,b]`/`a,b` forms. */
+  /**
+   * Parses a `field` config value into a single- or multi-column reference.
+   *
+   * Accepts a `List`, or a string that may be `[a,b]`, `a,b`, or a bare name. A single element becomes `Left(name)`;
+   * two or more become `Right(List(...))`. Surrounding quotes are stripped.
+   *
+   * Args: input: The raw field value.
+   *
+   * Returns: `Left` for a single column, `Right` for multiple.
+   */
   def parseField(input: Any): Either[String, List[String]] = input match {
     case list: List[_] =>
       val cols = list.map(_.toString.trim)
@@ -168,7 +245,18 @@ object RuleDefinition {
     case other => Left(other.toString.trim)
   }
 
-  /** Parse a raw `value` (from JSON/CSV/maps) into a [[RuleValue]], handling the tagged string forms used by CSV. */
+  /**
+   * Parses a raw `value` config value into a [[RuleValue]].
+   *
+   * Handles native JVM types (Boolean, Int/Long, Float/Double, LocalDate, LocalDateTime, List) and strings. Strings are
+   * checked for the tagged CSV forms (`StringValue(...)`, `LongValue(...)`, ...) produced by
+   * [[RuleValue.toTaggedString]], then for `[a,b]` list syntax, then coerced through date → date-time → long → double →
+   * boolean → string, in that order. `null`, empty, and the literal `"NULL"` all become `None`.
+   *
+   * Args: input: The raw value from JSON/CSV/maps.
+   *
+   * Returns: The parsed value, or `None` when it represents a null.
+   */
   def parseValue(input: Any): Option[RuleValue] = input match {
     case null                                              => None
     case s: String if s.toUpperCase == "NULL" || s.isEmpty => None
@@ -223,7 +311,13 @@ object RuleDefinition {
     case other => Some(StringValue(other.toString))
   }
 
-  /** Parses an `updated_at` value into a LocalDateTime. */
+  /**
+   * Parses an `updated_at` value into a [[java.time.LocalDateTime]].
+   *
+   * Args: input: The raw value — a `LocalDateTime`, or a string parseable by `LocalDateTime.parse`.
+   *
+   * Returns: The parsed timestamp, or `None` when it can't be parsed.
+   */
   private def parseTimestamp(input: Any): Option[LocalDateTime] = input match {
     case dt: LocalDateTime => Some(dt)
     case s: String         => Try(LocalDateTime.parse(s)).toOption
@@ -231,10 +325,22 @@ object RuleDefinition {
   }
 }
 
-/** ADT for rule values — replaces Python's Any-typed value field. */
+/**
+ * ADT for the `value` field of a rule.
+ *
+ * Typed values replace the `Any`-typed value of the Python port so that round-tripping is lossless: each variant knows
+ * how to serialize itself (see [[toTaggedString]]) and be parsed back by [[RuleDefinition.parseValue]].
+ */
 sealed trait RuleValue {
 
-  /** Lossless export form used by RuleLoader (round-trips through parseValue). */
+  /**
+   * Lossless export form used by [[io.galileostd.sumeh.config.RuleLoader.toCsv]].
+   *
+   * Wraps the value in its constructor name (e.g. `LongValue(42)`, `ListValue([LongValue(1),StringValue(a)])`) so it
+   * survives CSV and round-trips through [[RuleDefinition.parseValue]] with no type ambiguity.
+   *
+   * Returns: The tagged string representation.
+   */
   def toTaggedString: String
 }
 
@@ -242,11 +348,14 @@ sealed trait RuleValue {
 object RuleValue {
 
   /**
-   * Converts a RuleValue to a plain JVM value (Spark F.lit-friendly: dates as java.sql.Date).
+   * Converts a [[RuleValue]] to a plain JVM value.
+   *
+   * Dates and timestamps become `java.sql.Date`/`java.sql.Timestamp` so the result is directly usable with Spark's
+   * `F.lit(...)`. Lists are converted recursively.
    *
    * Args: v: The rule value.
    *
-   * Returns: A plain JVM value (String, Long, Double, Boolean, java.sql.Date/Timestamp, or List).
+   * Returns: A plain JVM value: `String`, `Long`, `Double`, `Boolean`, `java.sql.Date`/`java.sql.Timestamp`, or `List`.
    */
   def toAny(v: RuleValue): Any = v match {
     case StringValue(s)    => s
@@ -259,37 +368,103 @@ object RuleValue {
   }
 }
 
-/** String rule value. */
+/**
+ * String rule value.
+ *
+ * Holds the text payload for pattern, SQL, and format rules (e.g. a regex for `has_pattern`).
+ */
 final case class StringValue(v: String) extends RuleValue {
+
+  /**
+   * Serializes as `StringValue(<v>)`.
+   *
+   * Returns: The tagged string form.
+   */
   def toTaggedString: String = s"StringValue($v)"
 }
 
-/** Long rule value. */
+/**
+ * Long rule value.
+ *
+ * Holds integer thresholds and comparison values (e.g. `LongValue(18)` in an `is_between` range).
+ */
 final case class LongValue(v: Long) extends RuleValue {
+
+  /**
+   * Serializes as `LongValue(<v>)`.
+   *
+   * Returns: The tagged string form.
+   */
   def toTaggedString: String = s"LongValue($v)"
 }
 
-/** Double rule value. */
+/**
+ * Double rule value.
+ *
+ * Holds decimal thresholds and comparison values.
+ */
 final case class DoubleValue(v: Double) extends RuleValue {
+
+  /**
+   * Serializes as `DoubleValue(<v>)`.
+   *
+   * Returns: The tagged string form.
+   */
   def toTaggedString: String = s"DoubleValue($v)"
 }
 
-/** Boolean rule value. */
+/**
+ * Boolean rule value.
+ *
+ * Holds `true`/`false` comparisons.
+ */
 final case class BoolValue(v: Boolean) extends RuleValue {
+
+  /**
+   * Serializes as `BoolValue(<v>)`.
+   *
+   * Returns: The tagged string form.
+   */
   def toTaggedString: String = s"BoolValue($v)"
 }
 
-/** Date rule value (local date, no time). */
+/**
+ * Date rule value (a calendar date with no time component).
+ */
 final case class DateValue(v: LocalDate) extends RuleValue {
+
+  /**
+   * Serializes as `DateValue(<v>)`.
+   *
+   * Returns: The tagged string form.
+   */
   def toTaggedString: String = s"DateValue($v)"
 }
 
-/** Date-time rule value. */
+/**
+ * Date-time rule value (a date with a time-of-day component).
+ */
 final case class DateTimeValue(v: LocalDateTime) extends RuleValue {
+
+  /**
+   * Serializes as `DateTimeValue(<v>)`.
+   *
+   * Returns: The tagged string form.
+   */
   def toTaggedString: String = s"DateTimeValue($v)"
 }
 
-/** List of rule values (used by is_between, is_contained_in, ...). */
+/**
+ * List of rule values.
+ *
+ * Used by list-valued rules such as `is_between`, `is_contained_in`, and `not_contained_in`.
+ */
 final case class ListValue(v: List[RuleValue]) extends RuleValue {
+
+  /**
+   * Serializes as `ListValue([<v1>,<v2>,...])`, tagging each element recursively.
+   *
+   * Returns: The tagged string form.
+   */
   def toTaggedString: String = s"ListValue([${v.map(_.toTaggedString).mkString(",")}])"
 }

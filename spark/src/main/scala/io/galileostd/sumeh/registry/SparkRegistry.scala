@@ -4,10 +4,14 @@ import io.galileostd.sumeh.spark.analyzer._
 import io.galileostd.sumeh.spark.constraint._
 
 /**
- * Maps check_type → (SparkAnalyzer, SparkConstraint). Mirrors Python's VALIDATION_REGISTRY.
+ * Maps `check_type` → `(SparkAnalyzer, SparkConstraint)` for every rule the Spark engine implements.
+ *
+ * The runtime analogue of the core `RuleRegistry` manifest: it wires each rule name to the analyzer that computes its
+ * metric and the constraint that turns that metric into a pass/fail. Mirrors Python's `VALIDATION_REGISTRY`.
  */
 object SparkRegistry {
 
+  /** Wiring table: `check_type` → `(analyzer, constraint)`. */
   private val registry: Map[String, (SparkAnalyzer, SparkConstraint)] = Map(
     // Completeness
     "is_complete"  -> (CompletenessAnalyzer, CompletenessConstraint),
@@ -73,13 +77,13 @@ object SparkRegistry {
   )
 
   /**
-   * Returns the analyzer for a check_type.
+   * Returns the analyzer for a `check_type`.
    *
    * Args: checkType: The rule type.
    *
-   * Returns: The SparkAnalyzer.
+   * Returns: The `SparkAnalyzer` that computes the rule's metric.
    *
-   * Throws: IllegalArgumentException if the check_type is not implemented in the Spark engine.
+   * Throws: IllegalArgumentException if the `check_type` is not implemented in the Spark engine.
    */
   def getAnalyzer(checkType: String): SparkAnalyzer =
     registry
@@ -92,13 +96,13 @@ object SparkRegistry {
       ._1
 
   /**
-   * Returns the constraint for a check_type.
+   * Returns the constraint for a `check_type`.
    *
    * Args: checkType: The rule type.
    *
-   * Returns: The SparkConstraint.
+   * Returns: The `SparkConstraint` that turns the metric into a pass/fail result.
    *
-   * Throws: IllegalArgumentException if the check_type is not implemented.
+   * Throws: IllegalArgumentException if the `check_type` is not implemented.
    */
   def getConstraint(checkType: String): SparkConstraint =
     registry
@@ -110,6 +114,10 @@ object SparkRegistry {
       )
       ._2
 
-  /** All check_types implemented in the Spark engine, sorted. */
+  /**
+   * All `check_type`s implemented in the Spark engine, sorted.
+   *
+   * Returns: The sorted list of registered rule names.
+   */
   def listImplemented(): List[String] = registry.keys.toList.sorted
 }

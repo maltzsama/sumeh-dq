@@ -5,7 +5,11 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.DataFrame
 
 /**
- * Schema validator for Spark DataFrames. Mirrors Python's validate_schema / extract_schema for the Spark engine.
+ * Schema validator for Spark DataFrames.
+ *
+ * Extracts the actual schema of a DataFrame and compares it against an expected `SchemaDef` contract, reporting missing
+ * columns, type mismatches, comment/nullability violations, and (optionally) extra columns. Mirrors Python's
+ * `validate_schema` / `extract_schema` for the Spark engine.
  */
 object SparkSchemaValidator {
 
@@ -13,6 +17,12 @@ object SparkSchemaValidator {
   // Type mapping — Spark DataType → canonical type
   // -------------------------------------------------------------------------
 
+  /**
+   * Canonicalization map: Spark type names → canonical contract types.
+   *
+   * Numeric variants (byte, tinyint, short, smallint, ...) are folded into their canonical form so the contract does
+   * not depend on engine-specific spellings.
+   */
   private val typeMap: Map[String, String] = Map(
     "byte"          -> "integer",
     "tinyint"       -> "integer",
@@ -38,7 +48,16 @@ object SparkSchemaValidator {
     "map"           -> "complex"
   )
 
-  /** Maps a Spark DataType to its canonical string form. */
+  /**
+   * Maps a Spark [[DataType]] to its canonical string form.
+   *
+   * Numeric types collapse to `integer`/`float`, temporal types to `datetime`, and struct/map to `complex`, so a
+   * contract written in portable terms (`"integer"`, `"datetime"`, ...) compares against Spark's concrete types.
+   *
+   * Args: dt: The Spark data type.
+   *
+   * Returns: The canonical type name, or `"unknown"` for unmapped types.
+   */
   private def toCanonical(dt: DataType): String = dt match {
     case _: ByteType | _: ShortType | _: IntegerType | _: LongType => "integer"
     case _: FloatType | _: DoubleType | _: DecimalType             => "float"
@@ -55,7 +74,16 @@ object SparkSchemaValidator {
   // Extract schema from DataFrame
   // -------------------------------------------------------------------------
 
-  /** Extract actual schema as Map[colName → info]. */
+  /**
+   * Extracts the actual schema of a DataFrame as a `Map[colName -> info]`.
+   *
+   * Each info map holds `raw_type`, `nullable`, and `comment`, plus `element_type` (arrays) or `nested_fields`
+   * (structs) where applicable.
+   *
+   * Args: df: The DataFrame.
+   *
+   * Returns: Column name → schema info.
+   */
   def extractSchema(df: DataFrame): Map[String, Map[String, Any]] =
     df.schema.fields.map {
       field =>
@@ -78,7 +106,13 @@ object SparkSchemaValidator {
         field.name -> info.toMap
     }.toMap
 
-  /** Extracts a nested struct's fields as a colName -> info map. */
+  /**
+   * Extracts a nested struct's fields as a `colName -> info` map.
+   *
+   * Args: st: The struct type.
+   *
+   * Returns: Nested field name → basic info (`raw_type`, `nullable`, empty `comment`).
+   */
   private def extractSchemaFromStructType(st: StructType): Map[String, Map[String, Any]] =
     st.fields.map {
       f =>
@@ -94,7 +128,14 @@ object SparkSchemaValidator {
   // -------------------------------------------------------------------------
 
   /**
-   * Validate a Spark DataFrame against a SchemaDef. Mirrors Python's validate() in schema/validator.py.
+   * Validates a Spark DataFrame against an expected `SchemaDef`.
+   *
+   * Compares types, nullability, comments, array element types, and nested struct fields. When `strictColumns` is set
+   * on the contract, columns present in the data but absent from the contract are reported as `extraCols`.
+   *
+   * Args: df: The DataFrame. expected: The schema contract.
+   *
+   * Returns: A `SchemaReport` summarizing the outcome.
    */
   def validate(df: DataFrame, expected: SchemaDef): SchemaReport = {
     val actual = extractSchema(df)
@@ -110,7 +151,17 @@ object SparkSchemaValidator {
     report
   }
 
-  /** Recursively compares expected columns against actual schema info, collecting issues. */
+  /**
+   * Recursively compares expected columns against actual schema info, collecting issues.
+   *
+   * For each expected column it checks presence, canonical type, array element type, comment, nullability, and nested
+   * fields, merging child reports into a single one. Missing optional columns are ignored.
+   *
+   * Args: expectedCols: The contract columns. actualCols: The extracted schema info, keyed by column name. parentPath:
+   * Dot-prefix for nested column names in messages (e.g. `"address.street"`).
+   *
+   * Returns: A [[io.galileostd.sumeh.schema.SchemaReport]] with the collected issues.
+   */
   private def validateRecursive(
       expectedCols: List[ColumnDef],
       actualCols: Map[String, Map[String, Any]],
@@ -189,13 +240,29 @@ object SparkSchemaValidator {
   // Helpers
   // -------------------------------------------------------------------------
 
-  /** Normalizes an expected type so it compares against the canonical actual type (struct/map -> complex). */
+  /**
+   * Normalizes an expected type so it compares against the canonical actual type.
+   *
+   * `struct` and `map` become `complex` (their canonical form); everything else is lowercased as-is.
+   *
+   * Args: t: The contract type string.
+   *
+   * Returns: The normalized type.
+   */
   private def canonExpectedType(t: String): String = {
     val low = t.toLowerCase
     if (low == "struct" || low == "map") "complex" else low
   }
 
-  /** Best-effort mapping of a raw type name (from extractSchema) back to a Spark DataType. */
+  /**
+   * Best-effort mapping of a raw type name (from [[extractSchema]]) back to a Spark [[DataType]].
+   *
+   * Used to re-derive a concrete type so it can be canonicalized and compared. Unknown names fall back to `StringType`.
+   *
+   * Args: raw: The raw type name.
+   *
+   * Returns: A Spark [[DataType]] approximating the raw type.
+   */
   private def rawToDataType(raw: String): DataType = raw.toLowerCase.trim match {
     case "byte" | "tinyint"            => ByteType
     case "short" | "smallint"          => ShortType

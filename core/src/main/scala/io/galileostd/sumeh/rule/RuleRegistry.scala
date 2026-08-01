@@ -3,10 +3,13 @@ package io.galileostd.sumeh.rule
 /**
  * Metadata for a single rule in the catalog.
  *
- * Args: checkType: Rule name (e.g. "is_complete"). level: Validation level, ROW or TABLE. category: Rule category
- * (completeness, uniqueness, comparison, ...). description: Human-readable description of what the rule checks.
- * engines: Set of engine names where the rule is supported (e.g. "spark", "flink-streaming"). aliasOf: When set, this
- * rule is an alias of another checkType and behaves identically.
+ * Describes everything an engine needs to decide whether and how to run a rule: which level it operates at, which
+ * category it belongs to, which engines can execute it, and whether it is an alias of another rule.
+ *
+ * Args: checkType: The rule name (e.g. `"is_complete"`). level: Validation level, `ROW` or `TABLE`. category: Rule
+ * category (completeness, uniqueness, comparison, ...). description: Human-readable description of what the rule
+ * checks. engines: Set of engine names where the rule is supported (e.g. `"spark"`, `"flink-streaming"`). aliasOf: When
+ * set, this rule is an alias of another `checkType` and behaves identically.
  */
 final case class RuleEntry(
     checkType: String,
@@ -18,24 +21,37 @@ final case class RuleEntry(
 )
 
 /**
- * The rule catalog: a single source of truth for every supported `checkType`, its level, category, description, and
- * engine support. Both engines introspect this registry to enforce "no silent passes" — a rule the engine cannot run is
- * skipped with a reason, never silently accepted.
+ * The rule catalog: a single source of truth for every supported `checkType`.
+ *
+ * Holds the level, category, description, and engine support for every rule. Both engines introspect this registry to
+ * enforce the "no silent passes" contract — a rule the engine cannot run is skipped with a reason, never silently
+ * accepted.
  */
 object RuleRegistry {
 
-  // ROW-level rules work in both batch and streaming
+  /**
+   * Engines that can execute ROW-level rules — both batch and stateless streaming.
+   */
   private val row = Set("spark", "spark-streaming", "flink", "flink-streaming")
 
-  // Row rules that require state/windowing (not available in either stateless streaming engine)
+  /**
+   * Engines for row rules that require state/windowing (not available in either stateless streaming engine).
+   */
   private val streamingImpossible = Set("spark", "flink")
 
-  // Uniqueness requires global state over the whole dataset — only Spark batch can do it
+  /**
+   * Engines for uniqueness rules, which require global state over the whole dataset — only Spark batch.
+   */
   private val uniqueness = Set("spark")
 
-  // TABLE-level aggregations only work in batch (no streaming)
+  /**
+   * Engines for TABLE-level aggregations — batch only (no streaming).
+   */
   private val batch = Set("spark", "flink")
 
+  /**
+   * The full catalog: one RuleEntry per supported rule, in declaration order.
+   */
   private val entries: List[RuleEntry] = List(
     // Completeness
     RuleEntry("is_complete", "ROW", "completeness", "Checks that field has no null values", row),
@@ -128,22 +144,54 @@ object RuleRegistry {
     RuleEntry("validate_schema", "TABLE", "schema", "Validates DataFrame schema structure", batch)
   )
 
+  /** Lookup index: `checkType` → RuleEntry. */
   private val manifest: Map[String, RuleEntry] =
     entries.map(e => e.checkType -> e).toMap
 
-  /** Look up a rule's metadata by `checkType`. */
+  /**
+   * Looks up a rule's metadata by `checkType`.
+   *
+   * Args: checkType: The rule name.
+   *
+   * Returns: The rule's [[RuleEntry]], or `None` if it is not registered.
+   */
   def getRule(checkType: String): Option[RuleEntry] = manifest.get(checkType)
 
-  /** All registered rule names. */
+  /**
+   * All registered rule names, in declaration order.
+   *
+   * Returns: The full list of `checkType` names (aliases included).
+   */
   def listRules(): List[String] = entries.map(_.checkType)
 
-  /** Whether an engine can execute the given rule (rules unsupported by an engine are skipped with a reason). */
+  /**
+   * Whether an engine can execute the given rule.
+   *
+   * Used together with [[io.galileostd.sumeh.rule.RuleDefinition.skipReason]] so unsupported rules are skipped with a
+   * reason instead of silently passing.
+   *
+   * Args: checkType: The rule name. engine: The engine name (e.g. `"spark"`, `"flink-streaming"`).
+   *
+   * Returns: `true` when the engine is in the rule's `engines` set.
+   */
   def isSupported(checkType: String, engine: String): Boolean =
     manifest.get(checkType).exists(_.engines.contains(engine))
 
-  /** Rules belonging to a category (e.g. `"date"`, `"aggregation"`). */
+  /**
+   * Rules belonging to a category.
+   *
+   * Args: category: The category name (e.g. `"date"`, `"aggregation"`).
+   *
+   * Returns: The matching [[RuleEntry]]s in declaration order.
+   */
   def byCategory(category: String): List[RuleEntry] = entries.filter(_.category == category)
 
-  /** Rules at a given level (`ROW` / `TABLE`). */
+  /**
+   * Rules at a given level.
+   *
+   * Args: level: The level name — `ROW` or `TABLE` (case-insensitive).
+   *
+   * Returns: The matching [[RuleEntry]]s in declaration order.
+   */
   def byLevel(level: String): List[RuleEntry] = entries.filter(_.level == level.toUpperCase)
 }

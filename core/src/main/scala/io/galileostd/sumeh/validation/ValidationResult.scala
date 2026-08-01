@@ -6,13 +6,18 @@ import java.util.UUID
 import io.galileostd.sumeh.rule.RuleValue
 
 /**
- * Output of a Constraint — compares a metric to the rule expectation. One result per rule executed.
+ * Output of a Constraint — compares a metric to the rule expectation.
  *
- * Args: id: Unique identifier. timestamp: When validation ran. ruleId: Rule identifier. level: ROW or TABLE. category:
- * "completeness", "uniqueness", etc. checkType: Rule type (e.g. "is_complete"). field: Column name(s) validated.
- * status: PASS, FAIL, ERROR, or SKIPPED. passRate: % of rows that passed (row-level only). expectedValue: What the rule
- * expected. actualValue: What was actually measured. violatingRowIds: Row indices that failed. message: Human-readable
- * explanation. metadata: Extra context.
+ * One result per rule executed. It carries the rule identity, the outcome (`status`), the measured vs. expected values,
+ * and a human-readable message, so downstream consumers (dashboards, alerting, sinks) can act on it without re-deriving
+ * the comparison.
+ *
+ * Args: id: Unique identifier for the result. timestamp: When the validation ran. ruleId: Rule identifier. level: ROW
+ * or TABLE. category: The rule category (e.g. `"completeness"`, `"uniqueness"`). checkType: The rule type (e.g.
+ * `"is_complete"`). field: Column name(s) validated. status: PASS, FAIL, ERROR, or SKIPPED. passRate: Percentage of
+ * rows that passed (row-level rules only). expectedValue: What the rule expected. actualValue: What was actually
+ * measured. violatingRowIds: Row indices that failed the rule. message: Human-readable explanation (e.g. why a rule
+ * failed). metadata: Extra context from the metric.
  */
 final case class ValidationResult(
     id: String = UUID.randomUUID().toString,
@@ -31,23 +36,37 @@ final case class ValidationResult(
     metadata: Map[String, Any] = Map.empty
 ) {
 
-  /** Flattened column name(s): single name or comma-joined list. */
+  /**
+   * Flattened column name(s): a single name for `Left`, or a comma-joined string for `Right`.
+   *
+   * Returns: The column name, or comma-joined column names.
+   */
   def fieldName: String = field.fold(identity, _.mkString(","))
 
+  /**
+   * Compact rendering of the result outcome.
+   *
+   * Returns: A string like `ValidationResult(is_complete on email: PASS)`.
+   */
   override def toString: String =
     s"ValidationResult($checkType on $fieldName: $status)"
 }
 
-/** Companion with result constructors. */
+/**
+ * Companion with result constructors.
+ */
 object ValidationResult {
 
   /**
-   * Result for a rule that was not executed (execute=false, wrong level, unsupported engine, etc).
+   * Result for a rule that was not executed.
+   *
+   * A rule is skipped when `execute=false`, when it targets the wrong level, or when the engine does not support it.
+   * Skipped rules never count as pass or fail — they are reported so the pipeline stays honest ("no silent passes").
    *
    * Args: checkType: The rule type. field: Column name(s). level: The rule's level. category: The rule's category.
    * reason: Why the rule was skipped.
    *
-   * Returns: A SKIPPED ValidationResult.
+   * Returns: A SKIPPED [[ValidationResult]] whose message starts with `Skipped: `.
    */
   def skipped(
       checkType: String,

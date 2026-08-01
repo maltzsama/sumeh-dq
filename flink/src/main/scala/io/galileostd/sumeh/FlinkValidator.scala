@@ -8,19 +8,23 @@ import org.apache.flink.types.Row
 import org.apache.flink.util.OutputTag
 
 /**
- * Flink entry point: validates DataStream[Row] records with side-output bifurcation.
+ * Flink entry point: validates `DataStream[Row]` records with side-output bifurcation.
  *
  * Streaming is stateless by design — each record is evaluated independently. Rules that need state (uniqueness,
- * TABLE-level aggregation) or custom SQL are skipped with a reason.
+ * TABLE-level aggregation) or custom SQL are skipped with a reason, never silently passed.
  */
 object FlinkValidator {
 
   /**
-   * Validates a stream and returns a ValidatedFlinkStream.
+   * Validates a stream and returns a [[io.galileostd.sumeh.flink.validation.ValidatedFlinkStream]].
    *
-   * Args: stream: The input DataStream[Row]. rules: Rules to apply.
+   * Each record is enriched with `_dq_errors` and `_dq_skipped` fields; good records go to the good side output and bad
+   * records to the error side output (see `split`).
    *
-   * Returns: A ValidatedFlinkStream whose split() exposes the (good, bad) side outputs.
+   * Args: stream: The input `DataStream[Row]`. rules: Rules to apply.
+   *
+   * Returns: A [[io.galileostd.sumeh.flink.validation.ValidatedFlinkStream]] whose `split()` exposes the `(good, bad)`
+   * side outputs.
    */
   def validate(
       stream: DataStream[Row],

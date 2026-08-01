@@ -3,10 +3,14 @@ package io.galileostd.sumeh.schema
 /**
  * Definition of a single column in a schema contract.
  *
- * Args: name: Column name. expectedType: Expected canonical type ("string", "integer", "float", etc). isOptional: If
- * true, a missing column is not an error. nullable: Whether the column allows nulls. elementType: For array columns:
- * element type (e.g. "string", "integer"). requireComment: Whether a comment/description is required. expectedComment:
- * Expected comment text. fields: Nested columns for struct types.
+ * Describes the expected shape of one column — its canonical type, nullability, whether it is required, and (for
+ * complex types) its element or nested fields.
+ *
+ * Args: name: Column name. expectedType: Expected canonical type (e.g. `"string"`, `"integer"`, `"float"`, `"array"`,
+ * `"struct"`). isOptional: When `true`, a missing column is not reported as an error. nullable: Whether the column may
+ * contain nulls. elementType: For array columns, the element type (e.g. `"string"`, `"integer"`). requireComment:
+ * Whether a comment/description is required on the column. expectedComment: The exact comment text expected on the
+ * column. fields: Nested [[ColumnDef]]s for struct columns.
  */
 final case class ColumnDef(
     name: String,
@@ -19,10 +23,22 @@ final case class ColumnDef(
     fields: Option[List[ColumnDef]] = None
 )
 
-/** Companion with a Map-based constructor. */
+/**
+ * Companion with a Map-based constructor.
+ */
 object ColumnDef {
 
-  /** Create from a Map — mirrors Python's from_dict. */
+  /**
+   * Creates a [[ColumnDef]] from a property map.
+   *
+   * Accepts either a plain type string (e.g. `"string"`) or a map with the keys `type`, `is_optional`, `nullable`,
+   * `element_type`, `require_comment`, `expected_comment`, and `fields` (recursively parsed). Mirrors Python's
+   * `from_dict`.
+   *
+   * Args: name: The column name. props: The type string or property map.
+   *
+   * Returns: The parsed column definition.
+   */
   def fromMap(name: String, props: Any): ColumnDef = props match {
     case s: String => ColumnDef(name = name, expectedType = s)
     case m: Map[_, _] =>
@@ -45,7 +61,15 @@ object ColumnDef {
     case _ => ColumnDef(name = name, expectedType = "string")
   }
 
-  /** Lenient Boolean coercion (accepts Boolean, "true"/"yes"/"1", and non-zero numbers). */
+  /**
+   * Lenient Boolean coercion for config values.
+   *
+   * Accepts `Boolean`, the strings `"true"/"1"/"yes"/"y"/"t"` (case-insensitive), and non-zero numbers.
+   *
+   * Args: v: The raw config value.
+   *
+   * Returns: The coerced boolean.
+   */
   private def asBool(v: Any): Boolean = v match {
     case b: Boolean => b
     case s: String  => Set("true", "1", "yes", "y", "t").contains(s.trim.toLowerCase)
@@ -58,22 +82,29 @@ object ColumnDef {
 /**
  * Schema definition — a list of column contracts.
  *
- * Args: columns: Column definitions. strictColumns: If true, extra columns in the DataFrame are errors.
+ * A `SchemaDef` is the expected shape of a DataFrame, used by the schema validator to compare against reality.
+ *
+ * Args: columns: The column contracts. strictColumns: When `true`, extra columns in the DataFrame are reported as
+ * errors.
  */
 final case class SchemaDef(
     columns: List[ColumnDef],
     strictColumns: Boolean = false
 )
 
-/** Companion with a Map-based constructor. */
+/**
+ * Companion with a Map-based constructor.
+ */
 object SchemaDef {
 
   /**
-   * Builds a SchemaDef from a column-name -> contract map.
+   * Builds a [[SchemaDef]] from a column-name → contract map.
    *
-   * Args: data: Map of column name to a type string or a property map. strict: When true, extra columns become errors.
+   * Each value is either a plain type string or a property map, passed to [[ColumnDef.fromMap]].
    *
-   * Returns: The resulting SchemaDef.
+   * Args: data: Map of column name to contract. strict: When `true`, extra columns in the DataFrame become errors.
+   *
+   * Returns: The resulting schema definition.
    */
   def fromMap(data: Map[String, Any], strict: Boolean = false): SchemaDef =
     SchemaDef(
@@ -85,9 +116,12 @@ object SchemaDef {
 /**
  * Schema validation report.
  *
- * Args: passed: Whether validation passed. missingCols: Columns required but not found. typeErrors: Columns with wrong
- * type — colName -> error message. metadataErrors: Columns with comment/nullability issues. extraCols: Columns present
- * but not in the schema (only when strictColumns=true).
+ * Summarizes the outcome of a schema validation run against a [[SchemaDef]].
+ *
+ * Args: passed: Whether validation passed (no missing, type, or metadata issues). missingCols: Required columns that
+ * were not found in the data. typeErrors: Columns with the wrong type — column name → error message. metadataErrors:
+ * Columns with comment or nullability issues — column name → message. extraCols: Columns present in the data but not in
+ * the schema (only when `strictColumns` is `true`).
  */
 final case class SchemaReport(
     passed: Boolean,
@@ -97,11 +131,21 @@ final case class SchemaReport(
     extraCols: List[String] = List.empty
 ) {
 
-  /** Total number of issues across all categories. */
+  /**
+   * Total number of issues across all categories.
+   *
+   * Returns: The sum of missing columns, type errors, metadata errors, and extra columns.
+   */
   def totalIssues: Int =
     missingCols.size + typeErrors.size + metadataErrors.size + extraCols.size
 
-  /** Flat map form of the report. */
+  /**
+   * Flat map form of the report.
+   *
+   * Keys: `passed`, `missing_columns`, `type_errors`, `metadata_errors`, `extra_columns`, `total_issues`.
+   *
+   * Returns: The report as a serializable map.
+   */
   def toMap: Map[String, Any] = Map(
     "passed"          -> passed,
     "missing_columns" -> missingCols,
@@ -111,6 +155,11 @@ final case class SchemaReport(
     "total_issues"    -> totalIssues
   )
 
+  /**
+   * Compact rendering of the report outcome.
+   *
+   * Returns: A string like `SchemaReport(✓ PASSED, 0 issues)`.
+   */
   override def toString: String = {
     val status = if (passed) "✓ PASSED" else "✗ FAILED"
     s"SchemaReport($status, $totalIssues issues)"

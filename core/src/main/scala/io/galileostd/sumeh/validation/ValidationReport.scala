@@ -5,14 +5,15 @@ import java.time.LocalDateTime
 import io.galileostd.sumeh.engine.Splittable
 
 /**
- * Collection of ValidationResults for a single validation run. Returned by engine validate() calls.
+ * Collection of [[ValidationResult]]s for a single validation run.
  *
- * Use split() to separate good vs bad rows (Bifurcation) and summary() for a lightweight JSON-friendly payload.
+ * Returned by engine `validate()` calls. Use [[split]] to separate good vs. bad rows (the Bifurcation pattern) and
+ * [[summary]] for a lightweight JSON-friendly payload for dashboards, sinks, and alerting.
  *
- * Args: results: All validation results. totalRows: Total rows in the DataFrame. executionTimeMs: How long validation
- * took. engine: Engine that produced this report. errorMessage: Top-level error if validation failed entirely.
- * timestamp: When the report was generated. dfValidated: Engine-specific validated DataFrame wrapper. generatedSql: SQL
- * generated during validation (if applicable).
+ * Args: results: All validation results from the run. totalRows: Total rows in the validated dataset. executionTimeMs:
+ * How long validation took. engine: Engine that produced this report (e.g. `"spark"`, `"flink"`). errorMessage:
+ * Top-level error if validation failed entirely. timestamp: When the report was generated. dfValidated: Engine-specific
+ * validated dataset wrapper, used by [[split]]. generatedSql: SQL generated during validation, if applicable.
  */
 final case class ValidationReport[DF](
     results: List[ValidationResult],
@@ -25,23 +26,41 @@ final case class ValidationReport[DF](
     generatedSql: Option[String] = None
 ) {
 
-  /** Results whose status is PASS. */
+  /**
+   * Results whose status is PASS.
+   *
+   * Returns: The passing results.
+   */
   def passed: List[ValidationResult] = results.filter(_.status == ValidationStatus.PASS)
 
-  /** Results whose status is FAIL. */
+  /**
+   * Results whose status is FAIL.
+   *
+   * Returns: The failing results.
+   */
   def failed: List[ValidationResult] = results.filter(_.status == ValidationStatus.FAIL)
 
-  /** Results whose status is ERROR. */
+  /**
+   * Results whose status is ERROR.
+   *
+   * Returns: The errored results.
+   */
   def errors: List[ValidationResult] = results.filter(_.status == ValidationStatus.ERROR)
 
-  /** Results whose status is SKIPPED. */
+  /**
+   * Results whose status is SKIPPED.
+   *
+   * Returns: The skipped results.
+   */
   def skipped: List[ValidationResult] = results.filter(_.status == ValidationStatus.SKIPPED)
 
   /**
    * Fraction of evaluated (non-skipped) validations that passed.
    *
-   * Rules that were skipped (execute=false, wrong level, unsupported engine) neither pass nor fail and are excluded.
-   * Returns 1.0 when there is nothing to evaluate.
+   * Rules that were skipped (execute=false, wrong level, unsupported engine) neither pass nor fail and are excluded
+   * from the denominator, so a stream with many skipped TABLE rules is not unfairly punished.
+   *
+   * Returns: `passed / evaluated` in `[0.0, 1.0]`, or `1.0` when there is nothing to evaluate.
    */
   def passRate: Double = {
     val evaluated = results.size - skipped.size
@@ -50,7 +69,14 @@ final case class ValidationReport[DF](
   }
 
   /**
-   * Split validated DataFrame into (good, bad). Delegates to the engine-specific wrapper.
+   * Splits the validated dataset into (good, bad).
+   *
+   * Delegates to the engine-specific [[io.galileostd.sumeh.engine.Splittable]] instance supplied implicitly, which
+   * performs the split with no reprocessing.
+   *
+   * Returns: A `(good, bad)` tuple of validated datasets.
+   *
+   * Throws: IllegalStateException when no validated dataset is attached to this report.
    */
   def split()(
       implicit splittable: Splittable[DF]
@@ -60,12 +86,20 @@ final case class ValidationReport[DF](
       case None     => throw new IllegalStateException("No validated DataFrame available")
     }
 
-  /** Shortcut for split()._1 */
+  /**
+   * Shortcut for [[split]]._1 — the good (passing) dataset.
+   *
+   * Returns: The good rows.
+   */
   def goodDf()(
       implicit splittable: Splittable[DF]
   ): DF = split()._1
 
-  /** Shortcut for split()._2 */
+  /**
+   * Shortcut for [[split]]._2 — the bad (failing) dataset.
+   *
+   * Returns: The bad rows.
+   */
   def badDf()(
       implicit splittable: Splittable[DF]
   ): DF = split()._2
@@ -73,9 +107,12 @@ final case class ValidationReport[DF](
   /**
    * Flat JSON-friendly map for dashboards / sinks / alerting.
    *
+   * Includes run-level totals (`total_rows`, `passed`, `failed`, `errors`, `skipped`, `pass_rate`) and a per-rule
+   * `validations` list with status, measured vs. expected values, and a sample of violating row ids.
+   *
    * Args: maxSampleIds: Maximum number of violating row ids to include per rule.
    *
-   * Returns: A map with run-level totals, pass rate, and per-rule validation details.
+   * Returns: A serializable map describing the run.
    */
   def summary(maxSampleIds: Int = 100): Map[String, Any] = Map(
     "timestamp"         -> timestamp.toString,
@@ -107,12 +144,25 @@ final case class ValidationReport[DF](
     }
   )
 
-  /** Number of validation results. */
+  /**
+   * Number of validation results.
+   *
+   * Returns: The result count.
+   */
   def size: Int = results.size
 
-  /** True when there are no validation results. */
+  /**
+   * Whether there are no validation results.
+   *
+   * Returns: `true` when `results` is empty.
+   */
   def isEmpty: Boolean = results.isEmpty
 
+  /**
+   * Compact rendering of the run outcome.
+   *
+   * Returns: A string like `ValidationReport(3 rules, 1 failed, pass_rate=0.67)`.
+   */
   override def toString: String =
     s"ValidationReport(${results.size} rules, ${failed.size} failed, pass_rate=${f"$passRate%.2f"})"
 }

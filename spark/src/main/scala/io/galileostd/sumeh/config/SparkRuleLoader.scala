@@ -6,19 +6,24 @@ import io.galileostd.sumeh.rule.RuleDefinition
 import org.apache.spark.sql.DataFrame
 
 /**
- * Loads RuleDefinitions from Spark DataFrames.
+ * Loads `RuleDefinition`s from Spark DataFrames.
  *
- * Required columns: field, check_type. Optional: value, threshold, execute, level, category. Extra columns are
- * preserved as metadata.
+ * The standard layout has the columns `field`, `check_type` (required) and optionally `value`, `threshold`, `execute`,
+ * `level`, `category`. Any extra columns are preserved as rule metadata.
  */
 object SparkRuleLoader {
 
   /**
-   * Loads rules from a Spark DataFrame.
+   * Loads rules from a Spark DataFrame in the standard column layout.
    *
-   * Args: df: DataFrame with columns field, check_type (and optionally the others).
+   * Each row becomes one rule via `RuleDefinition.fromMap`; cell values are stringified so numbers and booleans parse
+   * cleanly.
    *
-   * Returns: List of RuleDefinition.
+   * Args: df: DataFrame with `field` and `check_type` columns (and optionally the others).
+   *
+   * Returns: The parsed rules, one per row.
+   *
+   * Throws: IllegalArgumentException when `field` or `check_type` is missing.
    */
   def fromDataFrame(df: DataFrame): List[RuleDefinition] = {
     val required = Set("field", "check_type")
@@ -36,11 +41,13 @@ object SparkRuleLoader {
   }
 
   /**
-   * Loads rules from a Spark DataFrame that has a single JSON column; each row is a rule object.
+   * Loads rules from a DataFrame where each row holds one rule as a JSON object.
    *
-   * Args: df: The DataFrame. column: The column name containing JSON (default "config").
+   * Args: df: The DataFrame. column: The column containing the JSON (default `"config"`).
    *
-   * Returns: List of RuleDefinition.
+   * Returns: The parsed rules, flattened across all rows.
+   *
+   * Throws: IllegalArgumentException when the column does not exist.
    */
   def fromJsonColumn(df: DataFrame, column: String = "config"): List[RuleDefinition] = {
     require(df.columns.contains(column), s"Column '$column' not found")

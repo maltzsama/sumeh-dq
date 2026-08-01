@@ -18,18 +18,19 @@ import org.apache.spark.sql.DataFrame
  * Column-level statistics for a Spark DataFrame, computed in a single validation pass.
  *
  * Mirrors the Python `profile(df)` output: for every column it measures completeness and cardinality; for numeric
- * columns it also measures min/max/mean/std/sum. The profiler reuses the existing [[SparkValidator]] analyzers, so no
- * extra scan or UDF is introduced.
+ * columns it also measures min/max/mean/std/sum. The profiler reuses the existing
+ * [[io.galileostd.sumeh.spark.SparkValidator]] analyzers, so no extra scan or UDF is introduced.
  */
 object SparkProfiler {
 
   /**
    * Statistics for a single column.
    *
-   * Args: type: Canonical column type. nullable: Whether the column allows nulls. rowCount: Total rows profiled.
-   * completeness: Fraction of non-null values (0.0–1.0). distinctCount: Number of distinct values. nullCount: Estimated
-   * number of nulls. uniqueness: distinctCount / rowCount. min/max/mean/stdDev/sum: Numeric statistics (None for
-   * non-numeric columns).
+   * Args: `type`: Canonical column type. nullable: Whether the column allows nulls. rowCount: Total rows profiled.
+   * completeness: Fraction of non-null values in `[0.0, 1.0]`. distinctCount: Number of distinct values. nullCount:
+   * Estimated number of nulls (`round(rowCount * (1 - completeness))`). uniqueness: `distinctCount / rowCount`. min:
+   * Numeric minimum (None for non-numeric columns). max: Numeric maximum. mean: Numeric mean. stdDev: Numeric standard
+   * deviation. sum: Numeric sum.
    */
   final case class ColumnProfile(
       `type`: String,
@@ -46,7 +47,11 @@ object SparkProfiler {
       sum: Option[Double] = None
   ) {
 
-    /** Flat map form of the profile. */
+    /**
+     * Flat map form of the profile.
+     *
+     * Returns: A serializable map with snake_case keys; numeric stats are `null` when absent.
+     */
     def toMap: Map[String, Any] = Map(
       "type"           -> `type`,
       "nullable"       -> nullable,
@@ -66,21 +71,29 @@ object SparkProfiler {
   /**
    * Column-level profile for a full DataFrame.
    *
-   * Args: tableStats: Run-level stats (total_rows, columns_count, execution_time_ms). columnProfiles: Column name ->
-   * ColumnProfile.
+   * Args: tableStats: Run-level stats (`total_rows`, `columns_count`, `execution_time_ms`). columnProfiles: Column name
+   * → [[ColumnProfile]].
    */
   final case class ProfileReport(
       tableStats: Map[String, Any],
       columnProfiles: Map[String, ColumnProfile]
   ) {
 
-    /** Flat map form of the report (column profiles flattened to maps). */
+    /**
+     * Flat map form of the report, with column profiles flattened to maps.
+     *
+     * Returns: A map shaped `{ "table_stats": {...}, "column_profiles": { col -> {...} } }`.
+     */
     def toMap: Map[String, Any] = Map(
       "table_stats"     -> tableStats,
       "column_profiles" -> columnProfiles.map { case (k, v) => k -> v.toMap }
     )
 
-    /** JSON payload for dashboards / metrics endpoints. */
+    /**
+     * JSON payload for dashboards / metrics endpoints.
+     *
+     * Returns: The report as a JSON string.
+     */
     def toJson: String = {
       def toValue(v: Any): ujson.Value = v match {
         case i: Int     => ujson.Num(i)
@@ -104,16 +117,23 @@ object SparkProfiler {
     }
   }
 
+  /**
+   * Spark types treated as numeric for profiling purposes.
+   */
   private val numericTypes: Set[org.apache.spark.sql.types.DataType] =
     Set(ByteType, ShortType, IntegerType, LongType, FloatType, DoubleType)
 
   /**
-   * Profile a DataFrame.
+   * Profiles a DataFrame.
    *
-   * @param df
-   *   DataFrame to profile
-   * @param sampleFraction
-   *   Optional fraction (0.0–1.0) to sample before profiling
+   * Builds a rule set from the DataFrame schema — `is_complete` + `has_cardinality` for every column, plus
+   * `has_min`/`has_max`/`has_mean`/`has_std`/`has_sum` for numeric columns — and runs them through
+   * [[io.galileostd.sumeh.spark.SparkValidator]] in one pass.
+   *
+   * Args: df: The DataFrame to profile. sampleFraction: Optional fraction in `(0.0, 1.0)` to sample (with a fixed seed)
+   * before profiling.
+   *
+   * Returns: A [[ProfileReport]] with table stats and per-column profiles.
    */
   def profile(df: DataFrame, sampleFraction: Option[Double] = None): ProfileReport = {
     val target = sampleFraction match {
@@ -160,11 +180,26 @@ object SparkProfiler {
     )
   }
 
-  /** True for numeric (or decimal) column types. */
+  /**
+   * Whether a column type is numeric (or decimal) and gets the full numeric statistics.
+   *
+   * Args: f: The struct field.
+   *
+   * Returns: `true` for byte/short/int/long/float/double/decimal columns.
+   */
   private def isNumeric(f: StructField): Boolean =
     numericTypes.contains(f.dataType) || f.dataType.isInstanceOf[DecimalType]
 
-  /** Assembles a ColumnProfile from the per-column validation results. */
+  /**
+   * Assembles a [[ColumnProfile]] from the per-column validation results.
+   *
+   * Picks the `is_complete` and `has_cardinality` values (plus the numeric stats) out of the rule results and derives
+   * `nullCount` and `uniqueness`.
+   *
+   * Args: field: The schema field. results: The validation results for this column. totalRows: Total rows profiled.
+   *
+   * Returns: The column profile.
+   */
   private def buildProfile(
       field: StructField,
       results: Seq[ValidationResult],

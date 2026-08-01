@@ -14,4 +14,4 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Rule `all_date_checks` — comprehensive per-row date validity suite (non-null + a real calendar date), on Spark and Flink.
 - Rule-matrix coverage gate: statement coverage >= 90% for all modules, enforced in CI.
 - Continuous integration: aggregated coverage report + Codecov upload.
-- Documentation site (MkDocs Material) with scaladoc API reference — published to GitHub Pages.
+- Scaladoc API reference published to GitHub Pages (no separate docs framework).
