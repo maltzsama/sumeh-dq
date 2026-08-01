@@ -104,5 +104,60 @@ class SparkProfilerSpec extends AnyWordSpec with Matchers with BeforeAndAfterAll
       parsed("table_stats")("total_rows").num shouldBe 4.0
       parsed("column_profiles")("age")("mean").num shouldBe 28.125
     }
+
+    "profile a table in a constant number of Spark jobs" in {
+      import org.apache.spark.scheduler.{ SparkListener, SparkListenerJobStart }
+
+      class JobCounter extends SparkListener {
+        @volatile var jobs: Int                                        = 0
+        override def onJobStart(jobStart: SparkListenerJobStart): Unit = jobs += 1
+      }
+
+      def table(colCount: Int): org.apache.spark.sql.DataFrame = {
+        val rows = (1 to 20).map { i =>
+          val values = (0 until colCount).flatMap(_ => Seq(Integer.valueOf(i), java.lang.Double.valueOf(i.toDouble)))
+          Row.fromSeq(values.toList)
+        }
+        val fields = (0 until colCount).flatMap {
+          i =>
+            Seq(
+              StructField(s"c${i}_int", IntegerType, nullable = true),
+              StructField(s"c${i}_dbl", DoubleType, nullable = true)
+            )
+        }
+        spark.createDataFrame(spark.sparkContext.parallelize(rows), StructType(fields))
+      }
+
+      val counter = new JobCounter
+      spark.sparkContext.addSparkListener(counter)
+      try {
+        SparkProfiler.profile(table(2)) // warm-up
+        counter.jobs = 0
+        SparkProfiler.profile(table(2))
+        val jobsSmall = counter.jobs
+
+        counter.jobs = 0
+        SparkProfiler.profile(table(10))
+        val jobsLarge = counter.jobs
+
+        jobsSmall shouldBe jobsLarge
+      } finally
+        spark.sparkContext.removeSparkListener(counter)
+    }
+
+    "return None for stats of an empty column" in {
+      val empty = spark.createDataFrame(
+        spark.sparkContext.emptyRDD[Row],
+        StructType(Seq(StructField("n", DoubleType, nullable = true)))
+      )
+      val profile = SparkProfiler.profile(empty)
+      val col     = profile.columnProfiles("n")
+      col.min shouldBe None
+      col.max shouldBe None
+      col.mean shouldBe None
+      col.stdDev shouldBe None
+      col.sum shouldBe None
+      col.completeness shouldBe 1.0
+    }
   }
 }

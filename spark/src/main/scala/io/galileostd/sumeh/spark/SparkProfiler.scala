@@ -1,7 +1,6 @@
 package io.galileostd.sumeh.spark
 
-import io.galileostd.sumeh.rule.RuleDefinition
-import io.galileostd.sumeh.spark.registry.SparkRegistry
+import org.apache.spark.sql.{ functions => F, DataFrame }
 import org.apache.spark.sql.types.{
   ByteType,
   DecimalType,
@@ -12,14 +11,13 @@ import org.apache.spark.sql.types.{
   ShortType,
   StructField
 }
-import org.apache.spark.sql.DataFrame
 
 /**
  * Column-level statistics for a Spark DataFrame.
  *
  * Mirrors the Python `profile(df)` output: for every column it measures completeness and cardinality; for numeric
- * columns it also measures min/max/mean/std/sum. The profiler calls the engine analyzers directly — it wants metrics,
- * not PASS/FAIL verdicts — so no constraint or `_dq_errors` annotation is involved.
+ * columns it also measures min/max/mean/std/sum. All statistics are computed in a single aggregation pass, so the
+ * number of Spark jobs is constant regardless of how many columns the DataFrame has.
  */
 object SparkProfiler {
 
@@ -126,9 +124,8 @@ object SparkProfiler {
   /**
    * Profiles a DataFrame.
    *
-   * Computes the row count once and then, for every column, invokes the engine analyzers directly (`is_complete` and
-   * `has_cardinality` for all columns; `has_min`/`has_max`/`has_mean`/`has_std`/`has_sum` for numeric ones) to read
-   * their metric values. No constraint or report is involved — the profiler wants numbers, not verdicts.
+   * Runs a single aggregation computing every statistic for every column at once, so the number of Spark jobs does not
+   * grow with the column count.
    *
    * Args: df: The DataFrame to profile. sampleFraction: Optional fraction in `(0.0, 1.0)` to sample (with a fixed seed)
    * before profiling.
@@ -142,10 +139,40 @@ object SparkProfiler {
     }
 
     val fields    = target.schema.fields
-    val totalRows = target.count()
     val startTime = System.currentTimeMillis()
 
-    val profiles = fields.map(f => f.name -> buildProfile(f, target, totalRows)).toMap
+    // One aggregation column per (field, statistic). The total-count column is the first
+    // element, so the recorded index is the exact position in the result row and column
+    // names never collide with weird `__` suffixes.
+    val index   = scala.collection.mutable.Map[(String, String), Int]()
+    val aggCols = scala.collection.mutable.ArrayBuffer[org.apache.spark.sql.Column](F.count(F.lit(1)).alias("__total"))
+
+    fields.foreach {
+      f =>
+        index((f.name, "nulls")) = aggCols.size
+        aggCols += F.sum(F.when(F.col(f.name).isNull, 1L).otherwise(0L))
+
+        index((f.name, "distinct")) = aggCols.size
+        aggCols += F.countDistinct(F.col(f.name))
+
+        if (isNumeric(f)) {
+          index((f.name, "min")) = aggCols.size
+          aggCols += F.min(F.col(f.name)).cast(DoubleType)
+          index((f.name, "max")) = aggCols.size
+          aggCols += F.max(F.col(f.name)).cast(DoubleType)
+          index((f.name, "mean")) = aggCols.size
+          aggCols += F.mean(F.col(f.name)).cast(DoubleType)
+          index((f.name, "std")) = aggCols.size
+          aggCols += F.stddev(F.col(f.name)).cast(DoubleType)
+          index((f.name, "sum")) = aggCols.size
+          aggCols += F.sum(F.col(f.name)).cast(DoubleType)
+        }
+    }
+
+    val row       = target.agg(aggCols.head, aggCols.tail.toSeq: _*).collect()(0)
+    val totalRows = row.getAs[Long](0)
+
+    val profiles = fields.map(f => f.name -> buildProfile(f, totalRows, row, index)).toMap
 
     ProfileReport(
       tableStats = Map(
@@ -168,40 +195,68 @@ object SparkProfiler {
     numericTypes.contains(f.dataType) || f.dataType.isInstanceOf[DecimalType]
 
   /**
-   * Assembles a [[ColumnProfile]] for one column by calling the analyzers directly.
+   * Reads a long statistic from the aggregation row.
    *
-   * Completeness comes from `is_complete`'s metric, cardinality from `has_cardinality`'s; numeric columns additionally
-   * read min/max/mean/std/sum. An analyzer that rejects the column (e.g. `has_min` on a string column) yields `None`
-   * for that stat instead of failing the whole profile.
+   * Args: field: The column name. stat: The statistic key. row: The result row. index: The (field, stat) → position
+   * map.
    *
-   * Args: field: The schema field. df: The DataFrame to measure. totalRows: Total rows (already counted).
+   * Returns: The long value.
+   */
+  private def statLong(
+      field: String,
+      stat: String,
+      row: org.apache.spark.sql.Row,
+      index: scala.collection.Map[(String, String), Int]
+  ): Long = row.getAs[Long](index((field, stat)))
+
+  /**
+   * Reads an optional double statistic, returning `None` when the aggregation was null.
+   *
+   * `min`/`max`/`mean`/`stddev`/`sum` are null on an empty or all-null column. Never call `getAs[Double]` on those
+   * directly — unboxing turns null into `0.0` silently.
+   *
+   * Args: field: The column name. stat: The statistic key. row: The result row. index: The (field, stat) → position
+   * map.
+   *
+   * Returns: The double value, or `None` when null.
+   */
+  private def statOpt(
+      field: String,
+      stat: String,
+      row: org.apache.spark.sql.Row,
+      index: scala.collection.Map[(String, String), Int]
+  ): Option[Double] = {
+    val i = index((field, stat))
+    if (row.isNullAt(i)) None else Some(row.getAs[Double](i))
+  }
+
+  /**
+   * Assembles a [[ColumnProfile]] from the single-pass aggregation row.
+   *
+   * Args: field: The schema field. totalRows: Total rows (from the aggregation). row: The result row. index: The
+   * (field, stat) → position map.
    *
    * Returns: The column profile.
    */
   private def buildProfile(
       field: StructField,
-      df: DataFrame,
-      totalRows: Long
+      totalRows: Long,
+      row: org.apache.spark.sql.Row,
+      index: scala.collection.Map[(String, String), Int]
   ): ColumnProfile = {
-    def metricValue(checkType: String): Option[Double] = {
-      val rule = RuleDefinition.validated(Left(field.name), checkType)
-      try Some(SparkRegistry.getAnalyzer(checkType).analyze(df, rule).value)
-      catch { case _: IllegalArgumentException => None }
-    }
-
-    val completeness = metricValue("is_complete").getOrElse(1.0)
-    val distinct     = metricValue("has_cardinality").getOrElse(0.0)
-    val nullCount    = math.round(totalRows * (1.0 - completeness))
-    val uniqueness   = if (totalRows > 0) distinct / totalRows else 0.0
+    val nullCount    = statLong(field.name, "nulls", row, index)
+    val completeness = if (totalRows > 0) (totalRows - nullCount).toDouble / totalRows else 1.0
+    val distinct     = statLong(field.name, "distinct", row, index)
+    val uniqueness   = if (totalRows > 0) distinct.toDouble / totalRows else 0.0
 
     val (min, max, mean, stdDev, sum) =
       if (isNumeric(field))
         (
-          metricValue("has_min"),
-          metricValue("has_max"),
-          metricValue("has_mean"),
-          metricValue("has_std"),
-          metricValue("has_sum")
+          statOpt(field.name, "min", row, index),
+          statOpt(field.name, "max", row, index),
+          statOpt(field.name, "mean", row, index),
+          statOpt(field.name, "std", row, index),
+          statOpt(field.name, "sum", row, index)
         )
       else (None, None, None, None, None)
 
@@ -210,8 +265,8 @@ object SparkProfiler {
       nullable = field.nullable,
       rowCount = totalRows,
       completeness = completeness,
-      distinctCount = distinct.toLong,
-      nullCount = nullCount,
+      distinctCount = distinct,
+      nullCount = math.round(totalRows * (1.0 - completeness)),
       uniqueness = uniqueness,
       min = min,
       max = max,
