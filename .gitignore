@@ -168,3 +168,15 @@ TempStatsStore/
 .env
 .env.local
 .env.*.local
+
+# ===============================
+# Documentation site
+# ===============================
+
+# MkDocs output
+site/
+
+# Generated scaladoc, staged into the docs tree at build time
+docs/api/core/
+docs/api/spark/
+docs/api/flink/

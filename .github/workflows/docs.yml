@@ -1,0 +1,62 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "README.md"
+      - "mkdocs.yml"
+      - "requirements-docs.txt"
+      - "**/*.scala"
+      - "**/*.sbt"
+      - "project/**"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: sbt/setup-sbt@v1
+
+      - name: Generate scaladoc
+        run: sbt -batch "core/Compile/doc" "spark/Compile/doc" "flink/Compile/doc"
+
+      - name: Stage API reference into docs
+        run: |
+          mkdir -p docs/api
+          cp -r core/target/scala-2.13/api docs/api/core
+          cp -r spark/target/scala-2.13/api docs/api/spark
+          cp -r flink/target/scala-2.13/api docs/api/flink
+
+      - name: Install MkDocs
+        run: pip install -r requirements-docs.txt
+
+      - name: Build site
+        run: mkdocs build --strict
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
+          publish_branch: gh-pages
+          force_orphan: true

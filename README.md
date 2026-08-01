@@ -1,4 +1,4 @@
-# <h1 align="center"><img src="docs/img/sumeh.svg" alt="Sumeh DQ" width="40" style="vertical-align: middle;" /> Sumeh DQ</h1>
+<h1 align="center"><img src="https://raw.githubusercontent.com/maltzsama/sumeh-dq/develop/docs/img/sumeh.svg" alt="Sumeh DQ" width="40" style="vertical-align: middle;" /> Sumeh DQ</h1>
 
 <p align="center">
   <a href="https://github.com/maltzsama/sumeh-dq/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/maltzsama/sumeh-dq/actions/workflows/ci.yml/badge.svg"></a>

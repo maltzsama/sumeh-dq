@@ -1,0 +1,79 @@
+site_name: Sumeh DQ
+site_description: "One rule engine, two execution backends. Declarative data-quality validation for Apache Spark and Apache Flink."
+site_author: "Demetrius Albuquerque"
+repo_url: https://github.com/maltzsama/sumeh-dq
+edit_uri: blob/develop/docs/
+
+theme:
+  name: material
+  logo: img/sumeh.svg
+  favicon: img/favicon.ico
+
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      logo: img/sumeh.svg
+      primary: white
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+
+    - media: "(prefers-color-scheme: dark)"
+      logo: img/sumeh.svg
+      primary: black
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+  features:
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+    - navigation.tabs
+    - navigation.indexes
+
+plugins:
+  - search
+  - include-markdown
+
+nav:
+  - Home:
+      - Overview: index.md
+      - Quickstart: quickstart.md
+      - Changelog: CHANGELOG.md
+      - License: LICENSE.md
+  - Rule Catalog: rule-catalog.md
+  - Engines:
+      - Spark: spark.md
+      - Flink: flink.md
+  - API Reference: api/index.md
+  - Building & Contributing: contributing.md
+
+markdown_extensions:
+  - toc:
+      permalink: true
+      toc_depth: 3
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.critic
+  - pymdownx.caret
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.tilde
+  - attr_list
+  - md_in_html
+  - tables
+
+extra_javascript:
+  - https://unpkg.com/mermaid@10/dist/mermaid.min.js
