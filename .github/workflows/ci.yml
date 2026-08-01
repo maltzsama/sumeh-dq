@@ -118,3 +118,27 @@ jobs:
           VERSION="${GITHUB_REF#refs/tags/v}"
           sbt -Dversion="$VERSION" ++2.12.18 core/publish
           sbt -Dversion="$VERSION" ++2.13.16 core/publish spark/publish flink/publish
+
+  docs-check:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'corretto'
+          cache: 'sbt'
+
+      - uses: sbt/setup-sbt@v1
+
+      - name: Generate scaladoc
+        run: sbt -batch "core/Compile/doc" "spark/Compile/doc" "flink/Compile/doc"
+
+      - name: Verify output exists
+        run: |
+          test -d core/target/scala-2.13/api
+          test -d spark/target/scala-2.13/api
+          test -d flink/target/scala-2.13/api

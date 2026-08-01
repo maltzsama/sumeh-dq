@@ -4,6 +4,7 @@
   <a href="https://github.com/maltzsama/sumeh-dq/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/maltzsama/sumeh-dq/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://codecov.io/gh/maltzsama/sumeh-dq"><img alt="Coverage" src="https://codecov.io/gh/maltzsama/sumeh-dq/graph/badge.svg"></a>
   <a href="https://github.com/maltzsama/sumeh-dq/releases"><img alt="Release" src="https://img.shields.io/github/v/release/maltzsama/sumeh-dq?color=blue&label=version&logo=github"></a>
+  <a href="https://maltzsama.github.io/sumeh-dq/"><img alt="Docs" src="https://img.shields.io/badge/docs-GitHub%20Pages-blue"></a>
   <a href="https://www.apache.org/licenses/LICENSE-2.0"><img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-green.svg"></a>
   <a href="https://www.scala-lang.org"><img alt="Scala" src="https://img.shields.io/badge/scala-2.12%20%7C%202.13-orange.svg"></a>
 </p>

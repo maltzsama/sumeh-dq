@@ -173,6 +173,9 @@ TempStatsStore/
 # Documentation site
 # ===============================
 
+# MkDocs / doc site build output
+site/
+
 # Generated scaladoc (sbt doc output)
 docs/api/core/
 docs/api/spark/
