@@ -18,11 +18,11 @@ class FlinkValidatorSpec extends AnyWordSpec with Matchers {
     Array[String]("id", "name", "age")
   )
 
-  private def namedRow(id: Int, name: String, age: Int): Row = {
-    val r = Row.withNames()
-    r.setField("id", Int.box(id))
-    r.setField("name", name)
-    r.setField("age", Int.box(age))
+  private def positionalRow(id: Int, name: String, age: Int): Row = {
+    val r = new Row(3)
+    r.setField(0, Int.box(id))
+    r.setField(1, name)
+    r.setField(2, Int.box(age))
     r
   }
 
@@ -36,7 +36,7 @@ class FlinkValidatorSpec extends AnyWordSpec with Matchers {
 
     "bifurcate a stream into good and bad side outputs" in {
       val validated = FlinkValidator.validate(
-        streamOf(namedRow(1, "alice", 30), namedRow(2, null, 25), namedRow(3, "bob", -5)),
+        streamOf(positionalRow(1, "alice", 30), positionalRow(2, null, 25), positionalRow(3, "bob", -5)),
         Seq(
           RuleDefinition.validated(Left("name"), "is_complete"),
           RuleDefinition.validated(Left("age"), "is_positive")
@@ -47,13 +47,13 @@ class FlinkValidatorSpec extends AnyWordSpec with Matchers {
       val goodRows    = good.executeAndCollect(10)
       val badRows     = bad.executeAndCollect(10)
 
-      goodRows.asScala.map(_.getField("id").asInstanceOf[Int]).toSet shouldBe Set(1)
-      badRows.asScala.map(_.getField("id").asInstanceOf[Int]).toSet shouldBe Set(2, 3)
+      goodRows.asScala.map(_.getField(0).asInstanceOf[Int]).toSet shouldBe Set(1)
+      badRows.asScala.map(_.getField(0).asInstanceOf[Int]).toSet shouldBe Set(2, 3)
     }
 
     "annotate _dq_errors and _dq_skipped on every row" in {
       val validated = FlinkValidator.validate(
-        streamOf(namedRow(1, "alice", 30), namedRow(2, null, 25)),
+        streamOf(positionalRow(1, "alice", 30), positionalRow(2, null, 25)),
         Seq(
           RuleDefinition.validated(Left("id"), "is_unique"),
           RuleDefinition.validated(Left("name"), "is_complete")
@@ -65,14 +65,14 @@ class FlinkValidatorSpec extends AnyWordSpec with Matchers {
       rows.size shouldBe 2
       rows.foreach {
         r =>
-          r.getFieldNames(true).asScala.toSet shouldBe Set("id", "name", "age", "_dq_errors", "_dq_skipped")
-          r.getField("_dq_skipped").toString should include("is_unique")
+          r.getArity shouldBe 5
+          r.getField(4).toString should include("is_unique")
       }
     }
 
     "send every row to the bad stream when all rules fail" in {
       val validated = FlinkValidator.validate(
-        streamOf(namedRow(1, null, -5), namedRow(2, null, -1)),
+        streamOf(positionalRow(1, null, -5), positionalRow(2, null, -1)),
         Seq(
           RuleDefinition.validated(Left("name"), "is_complete"),
           RuleDefinition.validated(Left("age"), "is_positive")
@@ -81,12 +81,12 @@ class FlinkValidatorSpec extends AnyWordSpec with Matchers {
 
       val (good, bad) = validated.split()
       good.executeAndCollect(10) shouldBe empty
-      bad.executeAndCollect(10).asScala.map(_.getField("id").asInstanceOf[Int]).toSet shouldBe Set(1, 2)
+      bad.executeAndCollect(10).asScala.map(_.getField(0).asInstanceOf[Int]).toSet shouldBe Set(1, 2)
     }
 
     "annotate _dq_skipped for unsupported rules on every row" in {
       val validated = FlinkValidator.validate(
-        streamOf(namedRow(1, "alice", 30), namedRow(2, "bob", 25)),
+        streamOf(positionalRow(1, "alice", 30), positionalRow(2, "bob", 25)),
         Seq(
           RuleDefinition.validated(Left("id"), "is_unique"),
           RuleDefinition.validated(Left("age"), "has_mean"),
@@ -102,9 +102,9 @@ class FlinkValidatorSpec extends AnyWordSpec with Matchers {
       badRows shouldBe empty
       goodRows.foreach {
         r =>
-          r.getField("_dq_skipped").toString should include("is_unique")
-          r.getField("_dq_skipped").toString should include("has_mean")
-          r.getField("_dq_skipped").toString should include("satisfies")
+          r.getField(4).toString should include("is_unique")
+          r.getField(4).toString should include("has_mean")
+          r.getField(4).toString should include("satisfies")
       }
     }
 
@@ -114,6 +114,56 @@ class FlinkValidatorSpec extends AnyWordSpec with Matchers {
         Seq(RuleDefinition.validated(Left("name"), "is_complete"))
       )
       validated.toNative.executeAndCollect(10) shouldBe empty
+    }
+
+    "process positional rows coming from a source with RowTypeInfo" in {
+      val validated = FlinkValidator.validate(
+        streamOf(positionalRow(1, "alice", 30), positionalRow(2, null, 25), positionalRow(3, "bob", -5)),
+        Seq(
+          RuleDefinition.validated(Left("name"), "is_complete"),
+          RuleDefinition.validated(Left("age"), "is_positive")
+        )
+      )
+
+      val rows = validated.toNative.executeAndCollect(10).asScala.toList
+      rows.size shouldBe 3
+
+      val (good, bad) = validated.split()
+      good.executeAndCollect(10).asScala.map(_.getField(0).asInstanceOf[Int]).toSet shouldBe Set(1)
+      bad.executeAndCollect(10).asScala.map(_.getField(0).asInstanceOf[Int]).toSet shouldBe Set(2, 3)
+    }
+
+    "declare a RowTypeInfo on the output, not a GenericTypeInfo" in {
+      val validated = FlinkValidator.validate(
+        streamOf(positionalRow(1, "alice", 30)),
+        Seq(RuleDefinition.validated(Left("name"), "is_complete"))
+      )
+      validated.toNative.getType shouldBe a[RowTypeInfo]
+      validated.toNative.getType.asInstanceOf[RowTypeInfo].getFieldNames should contain("_dq_errors")
+      validated.toNative.getType.asInstanceOf[RowTypeInfo].getFieldNames should contain("_dq_skipped")
+    }
+
+    "throw a clear message when the stream has no RowTypeInfo" in {
+      import org.apache.flink.api.common.typeinfo.Types
+      val env = StreamExecutionEnvironment.getExecutionEnvironment
+      env.setParallelism(1)
+      val untyped = env
+        .fromCollection(java.util.Collections.singletonList(new Row(0)))
+        .returns(Types.GENERIC(classOf[Row]))
+
+      an[IllegalArgumentException] should be thrownBy FlinkValidator.validate(untyped, Seq.empty)
+    }
+
+    "emit each row exactly once on the main output" in {
+      val validated = FlinkValidator.validate(
+        streamOf(positionalRow(1, "alice", 30), positionalRow(2, null, 25), positionalRow(3, "bob", -5)),
+        Seq(
+          RuleDefinition.validated(Left("name"), "is_complete"),
+          RuleDefinition.validated(Left("age"), "is_positive")
+        )
+      )
+
+      validated.toNative.executeAndCollect(10).asScala should have size 3
     }
   }
 }

@@ -11,25 +11,25 @@ import org.apache.flink.util.{ Collector, OutputTag }
 /**
  * Flink `ProcessFunction` that evaluates each record against the rules.
  *
- * Enriches every record with `_dq_errors` and `_dq_skipped` fields, routes good records to the good side output and bad
- * records to the error side output, and also emits the enriched record on the main output. Evaluation is stateless —
- * one record at a time.
+ * Enriches every record with `_dq_errors` and `_dq_skipped` fields, emits the enriched row once on the main output, and
+ * routes records with at least one error to the error side output. Field names come from the input `RowTypeInfo`, so
+ * positional rows are supported. Evaluation is stateless — one record at a time.
  *
- * Args: rules: Rules to evaluate. goodTag: Side-output tag for records that pass every rule. errorTag: Side-output tag
- * for records with at least one error.
+ * Args: rules: Rules to evaluate. fieldNames: Input field names, in positional order (from the stream's `RowTypeInfo`).
+ * errorTag: Side-output tag for records with at least one error.
  */
 private[flink] class DQProcessFunction(
     rules: Seq[RuleDefinition],
-    goodTag: OutputTag[Row],
+    fieldNames: Array[String],
     errorTag: OutputTag[Row]
 ) extends ProcessFunction[Row, Row] {
 
   /**
-   * Evaluates one record, routes it to the right side output, and emits the enriched row.
+   * Evaluates one record and emits the enriched row.
    *
-   * The record's fields are copied into a named row and augmented with `_dq_errors` (pipe-separated) and `_dq_skipped`
-   * (pipe-separated). Good records are routed to `goodTag`, bad records to `errorTag`; both are always emitted on the
-   * main output.
+   * The record's fields are copied by position into a widened row and augmented with `_dq_errors` (pipe-separated) and
+   * `_dq_skipped` (pipe-separated). The enriched row is always emitted once on the main output; records with at least
+   * one error are additionally routed to `errorTag`.
    *
    * Args: row: The input record. ctx: The process context used to write side outputs. out: The main output collector.
    */
@@ -39,21 +39,21 @@ private[flink] class DQProcessFunction(
       out: Collector[Row]
   ): Unit = {
 
-    val fieldCount = row.getArity
-    val names      = row.getFieldNames(true).toArray().map(_.asInstanceOf[String])
-    val values     = (0 until fieldCount).map(i => names(i) -> row.getField(i)).toMap
+    val values = fieldNames.indices.map(i => fieldNames(i) -> row.getField(i)).toMap
 
     val (errors, skipped) = DQProcessFunction.evaluate(values, rules)
 
-    val enriched = Row.withNames()
-    names.foreach(n => enriched.setField(n, values(n)))
-    enriched.setField("_dq_errors", errors.mkString("|"))
-    enriched.setField("_dq_skipped", skipped.mkString("|"))
-
-    if (errors.isEmpty) ctx.output(goodTag, enriched)
-    else ctx.output(errorTag, enriched)
+    val enriched = new Row(fieldNames.length + 2)
+    var i        = 0
+    while (i < fieldNames.length) {
+      enriched.setField(i, row.getField(i))
+      i += 1
+    }
+    enriched.setField(fieldNames.length, errors.mkString("|"))
+    enriched.setField(fieldNames.length + 1, skipped.mkString("|"))
 
     out.collect(enriched)
+    if (errors.nonEmpty) ctx.output(errorTag, enriched)
   }
 }
 
