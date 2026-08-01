@@ -17,15 +17,29 @@ ThisBuild / Test / parallelExecution := false
 
 // Dependencies (e.g. upickle 4.x) require scala-library 2.13.16, so we compile with it too.
 
-// Publishing to GitHub Packages (https://maven.pkg.github.com/maltzsama/sumeh-dq).
-// Only used in CI on release events; the version is set via -Dversion=X.Y.Z from the release tag.
-ThisBuild / publishTo := Some("GitHub Packages" at "https://maven.pkg.github.com/maltzsama/sumeh-dq")
-ThisBuild / credentials += Credentials(
-  "GitHub Package Registry",
-  "maven.pkg.github.com",
-  "maltzsama",
-  sys.env.getOrElse("GITHUB_TOKEN", "")
-)
+ThisBuild / versionScheme := Some("early-semver")
+
+// ---------------------------------------------------------------------------
+// Publishing.
+//
+// Artifacts are published to GitHub Packages in CI on release events, gated by
+// the GITHUB_PACKAGES env var (set in the publish job). Publishing to Maven
+// Central / Sonatype requires the repo owner to add the SONATYPE_USERNAME,
+// SONATYPE_PASSWORD, PGP_SECRET and PGP_PASSPHRASE repository secrets — see the
+// publishing PR for the exact checklist.
+//
+// TODO(owner): enable Maven Central by adding the Sonatype resolver here and
+// wiring the missing secrets in .github/workflows/ci.yml.
+// ---------------------------------------------------------------------------
+ThisBuild / publishTo := {
+  if (sys.env.contains("GITHUB_PACKAGES"))
+    Some("GitHub Packages" at "https://maven.pkg.github.com/maltzsama/sumeh-dq")
+  else None
+}
+
+ThisBuild / credentials ++= sys.env.get("GITHUB_TOKEN").map { token =>
+  Credentials("GitHub Package Registry", "maven.pkg.github.com", "maltzsama", token)
+}.toSeq
 
 lazy val core = (project in file("core"))
   .settings(
@@ -46,9 +60,9 @@ lazy val sparkVersion = settingKey[String]("Spark version")
 lazy val spark = (project in file("spark"))
   .dependsOn(core)
   .settings(
-    name         := "sumeh-spark",
-    scalaVersion := "2.13.16",
     sparkVersion := sys.props.getOrElse("spark.version", "4.1.2"),
+    name := s"sumeh-spark${sparkVersion.value.takeWhile(_ != '.')}", // sumeh-spark4 / sumeh-spark3
+    scalaVersion := "2.13.16",
     crossScalaVersions := {
       if (sparkVersion.value.startsWith("3.")) Seq("2.12.18", "2.13.16")
       else Seq("2.13.16")
@@ -81,10 +95,10 @@ lazy val flinkVersion = settingKey[String]("Flink version")
 lazy val flink = (project in file("flink"))
   .dependsOn(core)
   .settings(
-    name               := "sumeh-flink",
-    scalaVersion       := "2.13.16",
+    flinkVersion := sys.props.getOrElse("flink.version", "2.2.0"),
+    name := s"sumeh-flink${flinkVersion.value.takeWhile(_ != '.')}", // sumeh-flink2 / sumeh-flink1
+    scalaVersion := "2.13.16",
     crossScalaVersions := Seq("2.12.18", "2.13.16"),
-    flinkVersion       := sys.props.getOrElse("flink.version", "2.2.0"),
     libraryDependencies ++= Seq(
       "org.apache.flink" % "flink-streaming-java" % flinkVersion.value % Provided,
       "org.apache.flink" % "flink-table-api-java"  % flinkVersion.value % Provided,

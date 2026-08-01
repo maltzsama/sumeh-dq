@@ -120,10 +120,23 @@ jobs:
       - name: Publish to GitHub Packages
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_PACKAGES: "1"
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
+          # Core — both Scala versions
           sbt -Dversion="$VERSION" ++2.12.18 core/publish
-          sbt -Dversion="$VERSION" ++2.13.16 core/publish spark/publish flink/publish
+          sbt -Dversion="$VERSION" ++2.13.16 core/publish
+          # Spark 3.x line (sumeh-spark3) — both Scala versions
+          sbt -Dversion="$VERSION" -Dspark.version=3.5.5 ++2.12.18 spark/publish
+          sbt -Dversion="$VERSION" -Dspark.version=3.5.5 ++2.13.16 spark/publish
+          # Spark 4.x line (sumeh-spark4) — Scala 2.13 only
+          sbt -Dversion="$VERSION" ++2.13.16 spark/publish
+          # Flink 1.x line (sumeh-flink1) — both Scala versions
+          sbt -Dversion="$VERSION" -Dflink.version=1.20.0 ++2.12.18 flink/publish
+          sbt -Dversion="$VERSION" -Dflink.version=1.20.0 ++2.13.16 flink/publish
+          # Flink 2.x line (sumeh-flink2) — both Scala versions
+          sbt -Dversion="$VERSION" ++2.12.18 flink/publish
+          sbt -Dversion="$VERSION" ++2.13.16 flink/publish
 
   docs-check:
     runs-on: ubuntu-latest
