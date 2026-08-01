@@ -1,7 +1,17 @@
 ThisBuild / organization := "io.galileostd"
-ThisBuild / version      := "0.1.0-SNAPSHOT"
+ThisBuild / version      := sys.props.getOrElse("version", "0.1.0-SNAPSHOT")
 
 ThisBuild / Test / parallelExecution := false
+
+// Publishing to GitHub Packages (https://maven.pkg.github.com/maltzsama/sumeh-dq).
+// Only used in CI on release events; the version is set via -Dversion=X.Y.Z from the release tag.
+ThisBuild / publishTo := Some("GitHub Packages" at "https://maven.pkg.github.com/maltzsama/sumeh-dq")
+ThisBuild / credentials += Credentials(
+  "GitHub Package Registry",
+  "maven.pkg.github.com",
+  "maltzsama",
+  sys.env.getOrElse("GITHUB_TOKEN", "")
+)
 
 lazy val core = (project in file("core"))
   .settings(
