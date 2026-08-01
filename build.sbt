@@ -46,7 +46,7 @@ ThisBuild / publishTo := {
 // A local `publish` without the GITHUB_PACKAGES env var becomes an explicit
 // no-op instead of failing with a cryptic "repository not specified" error.
 // `publishLocal` is unaffected.
-ThisBuild / publish / skip := !sys.env.contains("GITHUB_PACKAGES")
+lazy val publishSkip = Def.setting(!sys.env.contains("GITHUB_PACKAGES"))
 
 ThisBuild / credentials ++= sys.env
   .get("GITHUB_TOKEN")
@@ -63,7 +63,9 @@ lazy val core = (project in file("core"))
     libraryDependencies ++= Seq(
       "com.lihaoyi"   %% "upickle"   % "4.4.3",
       "org.scalatest" %% "scalatest" % scalatestVersion % Test
-    )
+    ),
+    publish / skip      := publishSkip.value,
+    publishLocal / skip := false
   )
 
 lazy val sparkVersion = settingKey[String]("Spark version")
@@ -71,8 +73,8 @@ lazy val sparkVersion = settingKey[String]("Spark version")
 lazy val spark = (project in file("spark"))
   .dependsOn(core)
   .settings(
-    sparkVersion := sys.props.getOrElse("spark.version", "4.1.2"),
-    name         := s"sumeh-spark${sparkVersion.value.takeWhile(_ != '.')}", // sumeh-spark4 / sumeh-spark3
+    sparkVersion := sys.props.getOrElse("spark.version", "3.5.0"),
+    name         := "sumeh-spark",
     scalaVersion := "2.13.16",
     crossScalaVersions := {
       if (sparkVersion.value.startsWith("3.")) Seq("2.12.18", "2.13.16")
@@ -83,6 +85,8 @@ lazy val spark = (project in file("spark"))
       "org.apache.spark" %% "spark-core" % sparkVersion.value % Provided,
       "org.scalatest"    %% "scalatest"  % scalatestVersion   % Test
     ),
+    publish / skip           := publishSkip.value,
+    publishLocal / skip      := false,
     coverageMinimumStmtTotal := 80,
     coverageFailOnMinimum    := true,
     Test / fork              := true,
@@ -108,8 +112,8 @@ lazy val flinkVersion = settingKey[String]("Flink version")
 lazy val flink = (project in file("flink"))
   .dependsOn(core)
   .settings(
-    flinkVersion       := sys.props.getOrElse("flink.version", "2.2.0"),
-    name               := s"sumeh-flink${flinkVersion.value.takeWhile(_ != '.')}", // sumeh-flink2 / sumeh-flink1
+    flinkVersion       := sys.props.getOrElse("flink.version", "1.20.0"),
+    name               := "sumeh-flink",
     scalaVersion       := "2.13.16",
     crossScalaVersions := Seq("2.12.18", "2.13.16"),
     libraryDependencies ++= Seq(
@@ -120,6 +124,8 @@ lazy val flink = (project in file("flink"))
       "org.scala-lang.modules" %% "scala-collection-compat"     % "2.12.0",
       "org.scalatest"          %% "scalatest"                   % scalatestVersion   % Test
     ),
+    publish / skip           := publishSkip.value,
+    publishLocal / skip      := false,
     coverageMinimumStmtTotal := 80,
     coverageFailOnMinimum    := true,
     Test / fork              := true,
