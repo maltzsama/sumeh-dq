@@ -29,8 +29,24 @@ object SparkValidator {
    *
    * Single-pass: adds _dq_errors column per row. Use report.split() to separate good/bad rows. Zero .collect() on
    * row-level data.
+   *
+   * Works on batch AND streaming DataFrames (auto-detected via df.isStreaming). On a streaming DataFrame the validation
+   * runs as a pure column-expression transformation — no aggregation, no .collect() — mirroring the Flink engine. Rules
+   * that need state (uniqueness), custom SQL, or TABLE-level aggregation are SKIPPED with a reason (surfaced in the
+   * _dq_skipped column and report.results), and evaluated row rules carry no in-stream verdict.
    */
   def validate(
+      df: DataFrame,
+      rules: Seq[RuleDefinition]
+  ): ValidationReport[ValidatedSparkDataFrame] =
+    if (df.isStreaming) validateStreaming(df, rules)
+    else validateBatch(df, rules)
+
+  // -------------------------------------------------------------------------
+  // Batch path — analyzers compute metrics, TABLE rules run, full report
+  // -------------------------------------------------------------------------
+
+  private def validateBatch(
       df: DataFrame,
       rules: Seq[RuleDefinition]
   ): ValidationReport[ValidatedSparkDataFrame] = {
@@ -64,13 +80,13 @@ object SparkValidator {
             // Bifurcation: append error struct to failing rows
             if (result.status == ValidationStatus.FAIL) {
               val errorStruct = F.struct(
-                F.lit(result.id).alias("rule_id"),
-                F.lit(rule.checkType).alias("check_type"),
-                F.lit(rule.fieldName).alias("field"),
-                F.lit(rule.category).alias("category"),
-                F.lit(result.message.orNull).alias("message"),
-                F.lit(result.expectedValue.map(_.toString).orNull).alias("expected"),
-                F.lit(result.actualValue.map(_.toString).orNull).alias("actual")
+                F.lit(result.id).cast(StringType).alias("rule_id"),
+                F.lit(rule.checkType).cast(StringType).alias("check_type"),
+                F.lit(rule.fieldName).cast(StringType).alias("field"),
+                F.lit(rule.category).cast(StringType).alias("category"),
+                F.lit(result.message.orNull).cast(StringType).alias("message"),
+                F.lit(result.expectedValue.map(_.toString).orNull).cast(StringType).alias("expected"),
+                F.lit(result.actualValue.map(_.toString).orNull).cast(StringType).alias("actual")
               )
 
               // failCondition: reuse analyzer logic via column expression
@@ -118,6 +134,77 @@ object SparkValidator {
       executionTimeMs = executionTimeMs,
       engine = "spark",
       dfValidated = Some(validated)
+    )
+  }
+
+  // -------------------------------------------------------------------------
+  // Streaming path — column-expression annotation only, no eager ops
+  // -------------------------------------------------------------------------
+
+  private def validateStreaming(
+      df: DataFrame,
+      rules: Seq[RuleDefinition]
+  ): ValidationReport[ValidatedSparkDataFrame] = {
+
+    val startTime = System.currentTimeMillis()
+
+    val rowRules   = rules.filter(_.isApplicableForLevel("ROW"))
+    val tableRules = rules.filter(_.isApplicableForLevel("TABLE"))
+
+    val results        = scala.collection.mutable.ListBuffer[ValidationResult]()
+    val skippedReasons = scala.collection.mutable.ListBuffer[String]()
+
+    var workDf = df.withColumn("_dq_errors", F.array().cast(errorSchema))
+
+    // ROW-LEVEL: annotate failing rows via column expressions (no aggregation)
+    for (rule <- rowRules)
+      rule.skipReason("ROW", "spark-streaming") match {
+        case Some(reason) =>
+          results += skippedResult(rule, ValidationLevel.ROW, reason)
+          skippedReasons += s"${rule.checkType}:$reason"
+
+        case None =>
+          try {
+            val errorStruct = F.struct(
+              F.lit(UUID.randomUUID().toString).cast(StringType).alias("rule_id"),
+              F.lit(rule.checkType).cast(StringType).alias("check_type"),
+              F.lit(rule.fieldName).cast(StringType).alias("field"),
+              F.lit(rule.category).cast(StringType).alias("category"),
+              F.lit(null: String).cast(StringType).alias("message"),
+              F.lit(rule.value.map(_.toString).orNull).cast(StringType).alias("expected"),
+              F.lit(null: String).cast(StringType).alias("actual")
+            )
+            val failCond = buildFailCondition(workDf, rule)
+            workDf = workDf.withColumn(
+              "_dq_errors",
+              F.when(failCond, F.array_union(F.col("_dq_errors"), F.array(errorStruct)))
+                .otherwise(F.col("_dq_errors"))
+            )
+          } catch {
+            case e: Exception =>
+              results += errorResult(rule, ValidationLevel.ROW, e.getMessage)
+          }
+      }
+
+    // TABLE-LEVEL: aggregations are unsupported on a stream — always skipped
+    for (rule <- tableRules)
+      rule.skipReason("TABLE", "spark-streaming") match {
+        case Some(reason) =>
+          results += skippedResult(rule, ValidationLevel.TABLE, reason)
+          skippedReasons += s"${rule.checkType}:$reason"
+
+        case None =>
+          results += errorResult(rule, ValidationLevel.TABLE, "TABLE-level rule executed on a streaming DataFrame")
+      }
+
+    workDf = workDf.withColumn("_dq_skipped", F.lit(skippedReasons.mkString("|")))
+
+    ValidationReport(
+      results = results.toList,
+      totalRows = -1L, // unbounded stream: row count is unknown
+      executionTimeMs = (System.currentTimeMillis() - startTime).toDouble,
+      engine = "spark-streaming",
+      dfValidated = Some(new ValidatedSparkDataFrame(workDf))
     )
   }
 
@@ -219,7 +306,7 @@ object SparkValidator {
 
       case "validate_date_format" =>
         val format = rule.value.collect { case StringValue(s) => s }.getOrElse("")
-        F.to_date(F.col(field), format).isNull && F.col(field).isNotNull
+        F.try_to_timestamp(F.col(field), F.lit(format)).isNull && F.col(field).isNotNull
 
       case "satisfies" =>
         val condition = rule.value.collect { case StringValue(s) => s }.getOrElse("")

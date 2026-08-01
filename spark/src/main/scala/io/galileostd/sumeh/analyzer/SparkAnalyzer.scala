@@ -512,7 +512,7 @@ object DateFormatAnalyzer extends SparkAnalyzer {
       .getOrElse(throw new IllegalArgumentException("validate_date_format requires a format string as value"))
     requireField(df, field)
 
-    val failCond = F.to_date(F.col(field), format).isNull && F.col(field).isNotNull
+    val failCond = F.try_to_timestamp(F.col(field), F.lit(format)).isNull && F.col(field).isNotNull
 
     val result = df
       .agg(
