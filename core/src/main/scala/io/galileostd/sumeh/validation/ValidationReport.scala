@@ -1,6 +1,7 @@
 package io.galileostd.sumeh.validation
 
 import java.time.LocalDateTime
+import java.util.Locale
 
 import io.galileostd.sumeh.engine.Splittable
 
@@ -164,5 +165,5 @@ final case class ValidationReport[DF](
    * Returns: A string like `ValidationReport(3 rules, 1 failed, pass_rate=0.67)`.
    */
   override def toString: String =
-    s"ValidationReport(${results.size} rules, ${failed.size} failed, pass_rate=${f"$passRate%.2f"})"
+    s"ValidationReport(${results.size} rules, ${failed.size} failed, pass_rate=${String.format(Locale.ROOT, "%.2f", Double.box(passRate))})"
 }

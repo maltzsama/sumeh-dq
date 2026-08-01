@@ -1,6 +1,6 @@
 package io.galileostd.sumeh.spark.constraint
 
-import java.util.UUID
+import java.util.{ Locale, UUID }
 
 import io.galileostd.sumeh.metric.MetricResult
 import io.galileostd.sumeh.rule.RuleDefinition
@@ -26,6 +26,19 @@ trait SparkConstraint {
    * Returns: The `ValidationResult`.
    */
   def check(metric: MetricResult, rule: RuleDefinition): ValidationResult
+
+  /**
+   * Formats a fraction in `[0.0, 1.0]` as a locale-independent percentage with two decimals.
+   *
+   * Uses `Locale.ROOT` so the message never depends on the JVM's default locale (which would render `1,00` on a pt-BR
+   * host).
+   *
+   * Args: fraction: The fraction to format.
+   *
+   * Returns: A string like `"98.00"`.
+   */
+  protected def pct(fraction: Double): String =
+    String.format(Locale.ROOT, "%.2f", Double.box(fraction * 100))
 }
 
 // ============================================================================
@@ -59,7 +72,10 @@ object CompletenessConstraint extends SparkConstraint {
       actualValue = Some(metric.value),
       message =
         if (passed) None
-        else Some(s"Completeness ${f"${metric.value * 100}%.2f"}% below threshold ${f"${rule.threshold * 100}%.2f"}%"),
+        else
+          Some(
+            s"Completeness ${pct(metric.value)}% below threshold ${pct(rule.threshold)}%"
+          ),
       metadata = metric.metadata
     )
   }
@@ -96,7 +112,10 @@ object UniquenessConstraint extends SparkConstraint {
       actualValue = Some(metric.value),
       message =
         if (passed) None
-        else Some(s"Uniqueness ${f"${metric.value * 100}%.2f"}% below threshold ${f"${rule.threshold * 100}%.2f"}%"),
+        else
+          Some(
+            s"Uniqueness ${pct(metric.value)}% below threshold ${pct(rule.threshold)}%"
+          ),
       metadata = metric.metadata
     )
   }
@@ -131,11 +150,12 @@ object GenericConstraint extends SparkConstraint {
       status = if (passed) ValidationStatus.PASS else ValidationStatus.FAIL,
       passRate = Some(metric.value),
       actualValue = Some(metric.value),
-      message = if (passed) None
-      else
-        Some(
-          s"${rule.checkType} pass rate ${f"${metric.value * 100}%.2f"}% below threshold ${f"${rule.threshold * 100}%.2f"}%"
-        ),
+      message =
+        if (passed) None
+        else
+          Some(
+            s"${rule.checkType} pass rate ${pct(metric.value)}% below threshold ${pct(rule.threshold)}%"
+          ),
       metadata = metric.metadata
     )
   }
