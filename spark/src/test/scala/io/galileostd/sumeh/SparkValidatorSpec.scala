@@ -1392,5 +1392,15 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
             SparkRegistry.listImplemented() should contain(RuleRegistry.canonical(ct))
       }
     }
+
+    "resolve every alias to a real registry entry" in {
+      import io.galileostd.sumeh.rule.RuleRegistry
+      import io.galileostd.sumeh.spark.registry.SparkRegistry
+      RuleRegistry.listRules().foreach {
+        ct =>
+          if (RuleRegistry.getRule(ct).get.engines.contains("spark"))
+            noException should be thrownBy SparkRegistry.getAnalyzer(ct)
+      }
+    }
   }
 }
