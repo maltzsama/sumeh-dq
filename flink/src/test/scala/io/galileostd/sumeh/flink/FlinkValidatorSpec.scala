@@ -165,5 +165,22 @@ class FlinkValidatorSpec extends AnyWordSpec with Matchers {
 
       validated.toNative.executeAndCollect(10).asScala should have size 3
     }
+
+    "write _dq_errors as a JSON array with the Spark struct fields" in {
+      val validated = FlinkValidator.validate(
+        streamOf(positionalRow(1, null, -5)),
+        Seq(
+          RuleDefinition.validated(Left("name"), "is_complete"),
+          RuleDefinition.validated(Left("age"), "is_positive")
+        )
+      )
+
+      val row  = validated.toNative.executeAndCollect(10).asScala.head
+      val json = row.getField(3).toString
+      json should include("\"check_type\":\"is_complete\"")
+      json should include("\"check_type\":\"is_positive\"")
+      json should include("\"field\":\"name\"")
+      json should include("\"field\":\"age\"")
+    }
   }
 }

@@ -73,8 +73,11 @@ class SparkStreamingSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
 
       val skipped = report.results.filter(_.status == ValidationStatus.SKIPPED)
       (skipped.map(_.checkType) should contain).allOf("is_unique", "has_mean", "satisfies")
-      // evaluated row rules carry no in-stream verdict (mirrors Flink)
-      report.results.map(_.checkType) should not contain "is_complete"
+
+      // executed row rules are reported as applied (no pass rate on a stream)
+      (report.results.map(_.checkType) should contain).allOf("is_complete", "is_positive", "validate_date_format")
+      report.results.filter(_.checkType == "is_complete").head.status shouldBe ValidationStatus.PASS
+      report.results.filter(_.checkType == "is_complete").head.passRate shouldBe None
     }
 
     "annotate _dq_errors and _dq_skipped in a single pass" in {

@@ -16,8 +16,8 @@ import io.galileostd.sumeh.rule.RuleValue
  * or TABLE. category: The rule category (e.g. `"completeness"`, `"uniqueness"`). checkType: The rule type (e.g.
  * `"is_complete"`). field: Column name(s) validated. status: PASS, FAIL, ERROR, or SKIPPED. passRate: Percentage of
  * rows that passed (row-level rules only). expectedValue: What the rule expected. actualValue: What was actually
- * measured. violatingRowIds: Row indices that failed the rule. message: Human-readable explanation (e.g. why a rule
- * failed). metadata: Extra context from the metric.
+ * measured. violatingRowIds: Reserved — not yet populated; engines report counts via `metadata("fail_count")`. message:
+ * Human-readable explanation (e.g. why a rule failed). metadata: Extra context from the metric.
  */
 final case class ValidationResult(
     id: String = UUID.randomUUID().toString,

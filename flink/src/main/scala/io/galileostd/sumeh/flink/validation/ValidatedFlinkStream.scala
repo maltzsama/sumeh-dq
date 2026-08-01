@@ -24,8 +24,8 @@ class ValidatedFlinkStream(
   /**
    * Splits the stream into good and bad rows.
    *
-   * Good rows are those with an empty (or null) `_dq_errors` value; bad rows have at least one error and come from the
-   * error side output.
+   * Good rows are those whose `_dq_errors` is an empty JSON array (or null); bad rows have at least one error and come
+   * from the error side output.
    *
    * Returns: A `(good, bad)` tuple of `DataStream[Row]`.
    */
@@ -34,7 +34,7 @@ class ValidatedFlinkStream(
     val good = stream.filter(new FilterFunction[Row] {
       override def filter(r: Row): Boolean = {
         val v = r.getField(errorIdx)
-        v == null || v.toString.isEmpty
+        v == null || v.toString.trim == "[]"
       }
     })
     (good, stream.getSideOutput(errorTag))

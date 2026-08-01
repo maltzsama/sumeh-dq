@@ -27,9 +27,9 @@ private[flink] class DQProcessFunction(
   /**
    * Evaluates one record and emits the enriched row.
    *
-   * The record's fields are copied by position into a widened row and augmented with `_dq_errors` (pipe-separated) and
-   * `_dq_skipped` (pipe-separated). The enriched row is always emitted once on the main output; records with at least
-   * one error are additionally routed to `errorTag`.
+   * The record's fields are copied by position into a widened row and augmented with `_dq_errors` (a JSON array of
+   * error objects) and `_dq_skipped` (pipe-separated reasons). The enriched row is always emitted once on the main
+   * output; records with at least one error are additionally routed to `errorTag`.
    *
    * Args: row: The input record. ctx: The process context used to write side outputs. out: The main output collector.
    */
@@ -49,13 +49,27 @@ private[flink] class DQProcessFunction(
       enriched.setField(i, row.getField(i))
       i += 1
     }
-    enriched.setField(fieldNames.length, errors.mkString("|"))
+    enriched.setField(fieldNames.length, DQProcessFunction.errorsToJson(errors))
     enriched.setField(fieldNames.length + 1, skipped.mkString("|"))
 
     out.collect(enriched)
     if (errors.nonEmpty) ctx.output(errorTag, enriched)
   }
 }
+
+/**
+ * One structured error entry, mirroring the Spark `_dq_errors` struct fields so a consumer can treat both engines
+ * uniformly via `from_json`.
+ */
+final private[flink] case class DQError(
+    rule_id: String,
+    check_type: String,
+    field: String,
+    category: String,
+    message: Option[String] = None,
+    expected: Option[String] = None,
+    actual: Option[String] = None
+)
 
 /**
  * Companion with the pure, cluster-free rule evaluation logic.
@@ -69,17 +83,17 @@ private[flink] object DQProcessFunction {
    *
    * Returns a `(errors, skippedReasons)` pair. TABLE-level rules are always skipped with an explanatory reason; rules
    * whose `skipReason` yields a reason are skipped; any exception thrown while evaluating a rule is captured as an
-   * `ERROR[checkType]: message` entry.
+   * ERROR entry.
    *
    * Args: values: Field-name-to-value map of the record. rules: Rules to evaluate.
    *
-   * Returns: A tuple of error messages and skipped-rule reasons.
+   * Returns: A tuple of structured error entries and skipped-rule reasons.
    */
   private[flink] def evaluate(
       values: Map[String, Any],
       rules: Seq[RuleDefinition]
-  ): (List[String], List[String]) = {
-    val errors  = scala.collection.mutable.ListBuffer[String]()
+  ): (List[DQError], List[String]) = {
+    val errors  = scala.collection.mutable.ListBuffer[DQError]()
     val skipped = scala.collection.mutable.ListBuffer[String]()
 
     for (rule <- rules)
@@ -90,15 +104,36 @@ private[flink] object DQProcessFunction {
           case Some(reason) => skipped += s"${rule.checkType}:$reason"
           case None =>
             try
-              if (!checkRule(values, rule)) errors += buildErrorMessage(rule)
+              if (!checkRule(values, rule)) errors += buildError(rule)
             catch {
-              case e: Exception => errors += s"ERROR[${rule.checkType}]: ${e.getMessage}"
+              case e: Exception => errors += buildError(rule, Some(s"ERROR[${rule.checkType}]: ${e.getMessage}"))
             }
         }
       }
 
     (errors.toList, skipped.toList)
   }
+
+  /**
+   * Serializes error entries as a JSON array string, matching the Spark `_dq_errors` struct fields.
+   *
+   * Args: errors: The error entries for a record.
+   *
+   * Returns: A JSON array string (e.g. `[{"check_type":"is_complete",...}]`), or `[]` when empty.
+   */
+  private[flink] def errorsToJson(errors: List[DQError]): String =
+    ujson.write(ujson.Arr.from(errors.map(errorToJson)))
+
+  private def errorToJson(e: DQError): ujson.Obj =
+    ujson.Obj(
+      "rule_id"    -> ujson.Str(e.rule_id),
+      "check_type" -> ujson.Str(e.check_type),
+      "field"      -> ujson.Str(e.field),
+      "category"   -> ujson.Str(e.category),
+      "message"    -> e.message.map(ujson.Str(_)).getOrElse(ujson.Null),
+      "expected"   -> e.expected.map(ujson.Str(_)).getOrElse(ujson.Null),
+      "actual"     -> e.actual.map(ujson.Str(_)).getOrElse(ujson.Null)
+    )
 
   // -------------------------------------------------------------------------
   // Rule evaluation — pure row-level, no aggregation
@@ -234,14 +269,22 @@ private[flink] object DQProcessFunction {
   }
 
   /**
-   * Short `checkType:field` message used in the errors field.
+   * Builds a structured error entry for a failed rule.
    *
-   * Args: rule: The failed rule.
+   * Args: rule: The failed rule. message: Optional message (a short `checkType:field` by default, or a full ERROR
+   * message when an exception was caught).
    *
-   * Returns: A message identifying the failed check and the field it targeted.
+   * Returns: A [[DQError]] mirroring the Spark `_dq_errors` struct.
    */
-  private def buildErrorMessage(rule: RuleDefinition): String =
-    s"${rule.checkType}:${rule.fieldName}"
+  private def buildError(rule: RuleDefinition, message: Option[String] = None): DQError =
+    DQError(
+      rule_id = java.util.UUID.randomUUID().toString,
+      check_type = rule.checkType,
+      field = rule.fieldName,
+      category = rule.category,
+      message = message.orElse(Some(s"${rule.checkType}:${rule.fieldName}")),
+      expected = rule.value.map(_.toString)
+    )
 
   /**
    * Converts a raw value to Double, throwing on incompatible types.

@@ -152,7 +152,8 @@ object SparkValidator {
     val rowRules   = rules.filter(_.isApplicableForLevel("ROW"))
     val tableRules = rules.filter(_.isApplicableForLevel("TABLE"))
 
-    val results = scala.collection.mutable.ListBuffer[ValidationResult]()
+    val results        = scala.collection.mutable.ListBuffer[ValidationResult]()
+    val skippedReasons = scala.collection.mutable.ListBuffer[String]()
 
     // Uniqueness needs a windowed/groupBy fail condition, which cannot nest inside a shared
     // aggregation — it keeps its own analyzer per rule. Everything else shares one agg.
@@ -174,6 +175,7 @@ object SparkValidator {
       rule.skipReason("ROW", "spark") match {
         case Some(reason) =>
           outcomes += Left(skippedResult(rule, ValidationLevel.ROW, reason))
+          skippedReasons += s"${rule.checkType}:$reason"
 
         case None =>
           try {
@@ -238,6 +240,7 @@ object SparkValidator {
       rule.skipReason("ROW", "spark") match {
         case Some(reason) =>
           results += skippedResult(rule, ValidationLevel.ROW, reason)
+          skippedReasons += s"${rule.checkType}:$reason"
 
         case None =>
           try {
@@ -266,6 +269,7 @@ object SparkValidator {
       rule.skipReason("TABLE", "spark") match {
         case Some(reason) =>
           results += skippedResult(rule, ValidationLevel.TABLE, reason)
+          skippedReasons += s"${rule.checkType}:$reason"
 
         case None =>
           try {
@@ -279,8 +283,9 @@ object SparkValidator {
           }
       }
 
+    val annotated       = workDf.withColumn("_dq_skipped", F.lit(skippedReasons.mkString("|")))
     val executionTimeMs = (System.currentTimeMillis() - startTime).toDouble
-    val validated       = new ValidatedSparkDataFrame(workDf)
+    val validated       = new ValidatedSparkDataFrame(annotated)
 
     ValidationReport(
       results = results.toList,
@@ -339,6 +344,7 @@ object SparkValidator {
               F.lit(null: String).cast(StringType).alias("actual")
             )
             errorEntries += F.when(FailCondition(rule), errorStruct)
+            results += streamingResult(rule)
           } catch {
             case e: Exception =>
               results += errorResult(rule, ValidationLevel.ROW, e.getMessage)
@@ -535,5 +541,25 @@ object SparkValidator {
       category = rule.category,
       status = ValidationStatus.ERROR,
       message = Some(s"Error: $msg")
+    )
+
+  /**
+   * Builds the result for a rule that was applied on a streaming DataFrame.
+   *
+   * A stream has no finite aggregation, so no pass rate is computed — the rule is reported as applied without a
+   * `passRate`. This keeps `report.size` honest: every rule that ran appears in the report.
+   *
+   * Args: rule: The rule that was applied.
+   *
+   * Returns: A PASS [[io.galileostd.sumeh.validation.ValidationResult]] with no pass rate.
+   */
+  private def streamingResult(rule: RuleDefinition) =
+    ValidationResult(
+      checkType = rule.checkType,
+      field = rule.field,
+      level = ValidationLevel.ROW,
+      category = rule.category,
+      status = ValidationStatus.PASS,
+      message = Some("Rule applied to the stream; pass rate is not computable in streaming")
     )
 }

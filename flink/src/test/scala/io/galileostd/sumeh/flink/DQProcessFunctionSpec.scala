@@ -1,13 +1,13 @@
 package io.galileostd.sumeh.flink
 
-import io.galileostd.sumeh.flink.internal.DQProcessFunction
+import io.galileostd.sumeh.flink.internal.{ DQError, DQProcessFunction }
 import io.galileostd.sumeh.rule.{ DoubleValue, ListValue, LongValue, RuleDefinition, StringValue }
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 
 class DQProcessFunctionSpec extends AnyWordSpec with Matchers {
 
-  private def evaluate(values: Map[String, Any], rules: Seq[RuleDefinition]): (List[String], List[String]) =
+  private def evaluate(values: Map[String, Any], rules: Seq[RuleDefinition]): (List[DQError], List[String]) =
     DQProcessFunction.evaluate(values, rules)
 
   private val base = Map("name" -> "alice", "age" -> 30, "status" -> "active", "dt" -> "2024-05-06")
@@ -336,14 +336,41 @@ class DQProcessFunctionSpec extends AnyWordSpec with Matchers {
       val rules       = Seq(RuleDefinition.validated(Left("age"), "is_positive"))
       val (errors, _) = evaluate(base + ("age" -> "abc"), rules)
       errors should have size 1
-      errors.head should include("ERROR[is_positive]")
+      errors.head.message.get should include("ERROR[is_positive]")
     }
 
     "surface an ERROR for an unparseable date on a date rule" in {
       val rules       = Seq(RuleDefinition.validated(Left("dt"), "is_past_date"))
       val (errors, _) = evaluate(base + ("dt" -> "not-a-date"), rules)
       errors should have size 1
-      errors.head should include("ERROR[is_past_date]")
+      errors.head.message.get should include("ERROR[is_past_date]")
+    }
+  }
+
+  "DQProcessFunction.errorsToJson" should {
+
+    "serialize entries with the Spark struct fields" in {
+      val json = DQProcessFunction.errorsToJson(
+        List(
+          DQError(
+            rule_id = "r1",
+            check_type = "is_complete",
+            field = "name",
+            category = "completeness",
+            message = Some("is_complete:name"),
+            expected = None,
+            actual = None
+          )
+        )
+      )
+      json should include("\"check_type\":\"is_complete\"")
+      json should include("\"field\":\"name\"")
+      json should include("\"category\":\"completeness\"")
+      json should include("\"rule_id\":\"r1\"")
+    }
+
+    "produce an empty array when there are no errors" in {
+      DQProcessFunction.errorsToJson(Nil) shouldBe "[]"
     }
   }
 }

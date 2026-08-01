@@ -109,7 +109,9 @@ final case class ValidationReport[DF](
    * Flat JSON-friendly map for dashboards / sinks / alerting.
    *
    * Includes run-level totals (`total_rows`, `passed`, `failed`, `errors`, `skipped`, `pass_rate`) and a per-rule
-   * `validations` list with status, measured vs. expected values, and a sample of violating row ids.
+   * `validations` list with status, measured vs. expected values, and a sample of violating row ids. `fail_count` comes
+   * from the rule's `metadata("fail_count")` (populated by the engines); `violatingRowIds` is reserved and not yet
+   * populated.
    *
    * Args: maxSampleIds: Maximum number of violating row ids to include per rule.
    *
@@ -139,7 +141,7 @@ final case class ValidationReport[DF](
           "expected"             -> r.expectedValue.orNull,
           "actual"               -> r.actualValue.map(java.lang.Double.valueOf(_)).orNull,
           "message"              -> r.message.orNull,
-          "fail_count"           -> r.violatingRowIds.size,
+          "fail_count"           -> failCountOf(r),
           "sample_violating_ids" -> r.violatingRowIds.take(maxSampleIds)
         )
     }
@@ -166,4 +168,21 @@ final case class ValidationReport[DF](
    */
   override def toString: String =
     s"ValidationReport(${results.size} rules, ${failed.size} failed, pass_rate=${String.format(Locale.ROOT, "%.2f", Double.box(passRate))})"
+
+  /**
+   * Number of failing rows for a result, read from its metadata.
+   *
+   * Engines report the count under `fail_count` (most rules) or `null_count`/`incomplete_count` (completeness rules);
+   * `0` when absent.
+   *
+   * Args: r: The validation result.
+   *
+   * Returns: The failing-row count.
+   */
+  private def failCountOf(r: ValidationResult): Long =
+    Seq("fail_count", "null_count", "incomplete_count")
+      .flatMap(k => r.metadata.get(k))
+      .headOption
+      .map(_.toString.toLong)
+      .getOrElse(0L)
 }

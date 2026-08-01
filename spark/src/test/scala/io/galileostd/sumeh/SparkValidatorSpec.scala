@@ -1256,4 +1256,50 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       good.count() shouldBe 2
     }
   }
+
+  // -------------------------------------------------------------------------
+  // Output contract
+  // -------------------------------------------------------------------------
+
+  "Output contract" should {
+
+    "report the real fail_count in summary()" in {
+      val df = spark.createDataFrame(
+        spark.sparkContext.parallelize(
+          (1 to 10).map(i => Row(i, s"user$i")) :+ Row(11, null) :+ Row(12, null) :+ Row(13, null)
+        ),
+        StructType(
+          Seq(StructField("id", IntegerType, nullable = true), StructField("name", StringType, nullable = true))
+        )
+      )
+      val rules  = Seq(RuleDefinition.validated(Left("name"), "is_complete", threshold = 1.0))
+      val report = SparkValidator.validate(df, rules)
+      val validation = report
+        .summary()("validations")
+        .asInstanceOf[List[_]]
+        .head
+        .asInstanceOf[Map[String, Any]]
+      validation("fail_count") shouldBe 3L
+    }
+
+    "expose _dq_skipped in batch output" in {
+      val rules = Seq(
+        RuleDefinition.validated(Left("id"), "is_unique", execute = false),
+        RuleDefinition.validated(Left("name"), "is_complete")
+      )
+      val report = SparkValidator.validate(dfBasic, rules)
+      val cols   = report.dfValidated.get.toNative.columns
+      cols should contain("_dq_skipped")
+    }
+
+    "keep _dq_skipped on the good side after split" in {
+      val rules = Seq(
+        RuleDefinition.validated(Left("id"), "is_unique", execute = false),
+        RuleDefinition.validated(Left("name"), "is_complete")
+      )
+      val report    = SparkValidator.validate(dfBasic, rules)
+      val (good, _) = report.dfValidated.get.splitByErrors()
+      good.columns should contain("_dq_skipped")
+    }
+  }
 }
