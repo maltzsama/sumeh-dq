@@ -111,6 +111,13 @@ object SparkValidator {
    * violate a rule are always marked in `_dq_errors`, even when the rule passes the threshold. A report with pass rate
    * 1.0 can still have rows in the `bad` DataFrame.
    *
+   * Note: the order of `report.results` is NOT the input rule order. In batch it is simple ROW rules (in input order),
+   * then uniqueness rules, then TABLE rules — do not rely on `rules.zip(report.results)`.
+   *
+   * Note: `_dq_errors` is an `array<struct<rule_id, check_type, field, category, message, expected, actual>>` in Spark,
+   * but a JSON string carrying the same fields in the Flink engine. `_dq_skipped` is a `checkType:reason` string with
+   * `|` separators in both engines. Cross-engine sinks must handle the two `_dq_errors` shapes.
+   *
    * Args: df: The DataFrame to validate (batch or streaming). rules: The rules to run.
    *
    * Returns: A report with per-rule results and the validated wrapper for splitting.
