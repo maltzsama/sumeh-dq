@@ -3,6 +3,7 @@ package io.galileostd.sumeh.spark
 import java.util.UUID
 
 import io.galileostd.sumeh.rule.RuleDefinition
+import io.galileostd.sumeh.spark.expr.FailCondition
 import io.galileostd.sumeh.spark.registry.SparkRegistry
 import io.galileostd.sumeh.validation.{ ValidationLevel, ValidationReport, ValidationResult, ValidationStatus }
 import org.apache.spark.sql.{ functions => F, DataFrame }
@@ -121,7 +122,7 @@ object SparkValidator {
               )
 
               // failCondition: reuse analyzer logic via column expression
-              val failCond = buildFailCondition(workDf, rule)
+              val failCond = FailCondition(rule)
               workDf = workDf.withColumn(
                 "_dq_errors",
                 F.when(
@@ -216,7 +217,7 @@ object SparkValidator {
               F.lit(rule.value.map(_.toString).orNull).cast(StringType).alias("expected"),
               F.lit(null: String).cast(StringType).alias("actual")
             )
-            val failCond = buildFailCondition(workDf, rule)
+            val failCond = FailCondition(rule)
             workDf = workDf.withColumn(
               "_dq_errors",
               F.when(failCond, F.array_union(F.col("_dq_errors"), F.array(errorStruct)))
@@ -248,156 +249,6 @@ object SparkValidator {
       engine = "spark-streaming",
       dfValidated = Some(new ValidatedSparkDataFrame(workDf))
     )
-  }
-
-  // -------------------------------------------------------------------------
-  // Fail conditions per check_type — Column expressions, zero .collect()
-  // -------------------------------------------------------------------------
-
-  /**
-   * Builds the fail-condition column expression for a rule.
-   *
-   * This is the column-level twin of the batch analyzers: it yields a Boolean Column that is true exactly for rows that
-   * violate the rule, so the `_dq_errors` annotation needs zero `.collect()`. Uniqueness checks use a windowed count;
-   * `validate_schema` always yields false (schema is not a row-level concern).
-   *
-   * Args: df: The DataFrame being annotated. rule: The rule whose violation is tested.
-   *
-   * Returns: A Boolean column expression — true when the row fails the rule.
-   *
-   * Throws: IllegalArgumentException when no fail condition is defined for the rule's `check_type`.
-   */
-  private def buildFailCondition(df: DataFrame, rule: RuleDefinition) = {
-    import org.apache.spark.sql.Column
-    import io.galileostd.sumeh.rule._
-
-    val field     = rule.field.fold(identity, _.head)
-    val checkType = rule.checkType
-
-    checkType match {
-      // Completeness
-      case "is_complete" | "are_complete" =>
-        val fields = rule.field.fold(List(_), identity)
-        fields.map(f => F.col(f).isNull).reduce(_ || _)
-
-      // Uniqueness — can't do row-level without window; mark all rows (conservative)
-      case "is_unique" | "are_unique" | "is_primary_key" | "is_composite_key" =>
-        val fields = rule.field.fold(List(_), identity)
-        val w      = org.apache.spark.sql.expressions.Window.partitionBy(fields.map(F.col): _*)
-        F.count(F.lit(1)).over(w) > 1
-
-      // Comparison
-      case "is_equal"                 => F.col(field) =!= F.lit(ruleValueToAny(rule.value))
-      case "is_greater_than"          => F.col(field) <= F.lit(ruleValueToAny(rule.value))
-      case "is_less_than"             => F.col(field) >= F.lit(ruleValueToAny(rule.value))
-      case "is_greater_or_equal_than" => F.col(field) < F.lit(ruleValueToAny(rule.value))
-      case "is_less_or_equal_than"    => F.col(field) > F.lit(ruleValueToAny(rule.value))
-      case "is_positive"              => F.col(field) <= 0
-      case "is_negative"              => F.col(field) >= 0
-      case "is_in_millions"           => F.col(field) < 1000000L
-      case "is_in_billions"           => F.col(field) < 1000000000L
-
-      // Between
-      case "is_between" =>
-        val (min, max) = rule.value match {
-          case Some(ListValue(lo :: hi :: Nil)) => (ruleValueToAny(Some(lo)), ruleValueToAny(Some(hi)))
-          case _                                => throw new IllegalArgumentException("is_between requires [min, max]")
-        }
-        (F.col(field) < F.lit(min)) || (F.col(field) > F.lit(max))
-
-      // Column comparison
-      case "is_equal_than" =>
-        val other = rule.value.collect { case StringValue(s) => s }.getOrElse("")
-        F.col(field) =!= F.col(other)
-
-      // Membership
-      case "is_contained_in" | "is_in" =>
-        val vals = listValues(rule.value)
-        !F.col(field).isin(vals: _*)
-      case "not_contained_in" | "not_in" =>
-        val vals = listValues(rule.value)
-        F.col(field).isin(vals: _*)
-
-      // Pattern
-      case "has_pattern" =>
-        val pattern = rule.value.collect { case StringValue(s) => s }.getOrElse("")
-        !F.col(field).rlike(pattern)
-
-      case "is_legit" =>
-        F.col(field).isNull || (F.trim(F.col(field)) === "")
-
-      // Date
-      case "all_date_checks"               => F.col(field).isNotNull && DateExpr.safeToDate(F.col(field)).isNull
-      case "is_today"                      => DateExpr.safeToDate(F.col(field)) =!= F.current_date()
-      case "is_t_minus_1" | "is_yesterday" => DateExpr.safeToDate(F.col(field)) =!= F.date_sub(F.current_date(), 1)
-      case "is_t_minus_2"                  => DateExpr.safeToDate(F.col(field)) =!= F.date_sub(F.current_date(), 2)
-      case "is_t_minus_3"                  => DateExpr.safeToDate(F.col(field)) =!= F.date_sub(F.current_date(), 3)
-      case "is_past_date"                  => DateExpr.safeToDate(F.col(field)) >= F.current_date()
-      case "is_future_date"                => DateExpr.safeToDate(F.col(field)) <= F.current_date()
-      case "is_on_weekday"                 => F.dayofweek(DateExpr.safeToDate(F.col(field))).isin(1, 7)
-      case "is_on_weekend"                 => !F.dayofweek(DateExpr.safeToDate(F.col(field))).isin(1, 7)
-      case "is_on_monday"                  => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 2
-      case "is_on_tuesday"                 => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 3
-      case "is_on_wednesday"               => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 4
-      case "is_on_thursday"                => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 5
-      case "is_on_friday"                  => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 6
-      case "is_on_saturday"                => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 7
-      case "is_on_sunday"                  => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 1
-
-      case "is_date_between" =>
-        val (start, end) = rule.value match {
-          case Some(ListValue(StringValue(s) :: StringValue(e) :: Nil)) => (s, e)
-          case _ => throw new IllegalArgumentException("is_date_between requires [start, end]")
-        }
-        val dc = DateExpr.safeToDate(F.col(field))
-        (dc < F.to_date(F.lit(start))) || (dc > F.to_date(F.lit(end)))
-
-      case "is_date_after" =>
-        val target = rule.value.collect { case StringValue(s) => s }.getOrElse("")
-        DateExpr.safeToDate(F.col(field)) <= F.to_date(F.lit(target))
-
-      case "is_date_before" =>
-        val target = rule.value.collect { case StringValue(s) => s }.getOrElse("")
-        DateExpr.safeToDate(F.col(field)) >= F.to_date(F.lit(target))
-
-      case "validate_date_format" =>
-        val format = rule.value.collect { case StringValue(s) => s }.getOrElse("")
-        F.try_to_timestamp(F.col(field), F.lit(format)).isNull && F.col(field).isNotNull
-
-      case "satisfies" =>
-        val condition = rule.value.collect { case StringValue(s) => s }.getOrElse("")
-        !F.expr(condition)
-
-      case "validate_schema" =>
-        F.lit(false)
-
-      case other =>
-        throw new IllegalArgumentException(s"No fail condition defined for: $other")
-    }
-  }
-
-  /**
-   * Converts a [[io.galileostd.sumeh.rule.RuleValue]] to a plain JVM literal for `F.lit()`.
-   *
-   * Dates become `java.sql.Date`/`java.sql.Timestamp` via [[io.galileostd.sumeh.rule.RuleValue.toAny]].
-   *
-   * Args: v: The optional rule value.
-   *
-   * Returns: A plain JVM literal, or `null` when the value is absent.
-   */
-  private def ruleValueToAny(v: Option[io.galileostd.sumeh.rule.RuleValue]): Any =
-    v.map(io.galileostd.sumeh.rule.RuleValue.toAny).orNull
-
-  /**
-   * Extracts the plain values from a [[io.galileostd.sumeh.rule.ListValue]] rule value.
-   *
-   * Args: v: The optional rule value.
-   *
-   * Returns: The item literals, or an empty sequence when `v` is not a list.
-   */
-  private def listValues(v: Option[io.galileostd.sumeh.rule.RuleValue]): Seq[Any] = v match {
-    case Some(io.galileostd.sumeh.rule.ListValue(items)) => items.map(v => ruleValueToAny(Some(v)))
-    case _                                               => Seq.empty
   }
 
   /**

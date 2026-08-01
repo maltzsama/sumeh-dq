@@ -2,7 +2,7 @@ package io.galileostd.sumeh.spark.analyzer
 
 import io.galileostd.sumeh.metric.MetricResult
 import io.galileostd.sumeh.rule.{ DoubleValue, ListValue, LongValue, RuleDefinition, RuleValue, StringValue }
-import io.galileostd.sumeh.spark.DateExpr
+import io.galileostd.sumeh.spark.expr.FailCondition
 import org.apache.spark.sql.{ functions => F, DataFrame }
 
 // ============================================================================
@@ -86,7 +86,7 @@ object CompletenessAnalyzer extends SparkAnalyzer {
     val result = df
       .agg(
         F.count(F.lit(1)).alias("total"),
-        F.sum(F.when(F.col(field).isNull, 1).otherwise(0)).alias("null_count")
+        F.sum(F.when(FailCondition(rule), 1).otherwise(0)).alias("null_count")
       )
       .collect()(0)
 
@@ -123,12 +123,10 @@ object MultiFieldCompletenessAnalyzer extends SparkAnalyzer {
     val fields = rule.field.fold(List(_), identity)
     fields.foreach(requireField(df, _))
 
-    val anyNull = fields.map(f => F.col(f).isNull).reduce(_ || _)
-
     val result = df
       .agg(
         F.count(F.lit(1)).alias("total"),
-        F.sum(F.when(anyNull, 1).otherwise(0)).alias("incomplete_count")
+        F.sum(F.when(FailCondition(rule), 1).otherwise(0)).alias("incomplete_count")
       )
       .collect()(0)
 
@@ -259,23 +257,10 @@ object ComparisonAnalyzer extends SparkAnalyzer {
     val threshold = rule.value.map(RuleValue.toAny).orNull
     requireField(df, field)
 
-    val failCond = checkType match {
-      case "is_equal"                 => F.col(field) =!= F.lit(threshold)
-      case "is_greater_than"          => F.col(field) <= F.lit(threshold)
-      case "is_less_than"             => F.col(field) >= F.lit(threshold)
-      case "is_greater_or_equal_than" => F.col(field) < F.lit(threshold)
-      case "is_less_or_equal_than"    => F.col(field) > F.lit(threshold)
-      case "is_positive"              => F.col(field) <= 0
-      case "is_negative"              => F.col(field) >= 0
-      case "is_in_millions"           => F.col(field) < 1000000L
-      case "is_in_billions"           => F.col(field) < 1000000000L
-      case other                      => throw new IllegalArgumentException(s"Unknown comparison: $other")
-    }
-
     val result = df
       .agg(
         F.count(F.lit(1)).alias("total"),
-        F.sum(F.when(failCond, 1).otherwise(0)).alias("fail_count")
+        F.sum(F.when(FailCondition(rule), 1).otherwise(0)).alias("fail_count")
       )
       .collect()(0)
 
@@ -312,19 +297,14 @@ object BetweenAnalyzer extends SparkAnalyzer {
     val field = rule.field.fold(identity, _.head)
     requireField(df, field)
 
-    val (minVal, maxVal) = rule.value match {
-      case Some(ListValue(lo :: hi :: Nil)) =>
-        (RuleValue.toAny(lo), RuleValue.toAny(hi))
-      case _ =>
-        throw new IllegalArgumentException("is_between requires value=[min, max]")
-    }
-
-    val failCond = (F.col(field) < F.lit(minVal)) || (F.col(field) > F.lit(maxVal))
+    val (lo, hi) = FailCondition.requirePair(rule, "is_between requires value=[min, max]")
+    val minVal   = RuleValue.toAny(lo)
+    val maxVal   = RuleValue.toAny(hi)
 
     val result = df
       .agg(
         F.count(F.lit(1)).alias("total"),
-        F.sum(F.when(failCond, 1).otherwise(0)).alias("fail_count")
+        F.sum(F.when(FailCondition(rule), 1).otherwise(0)).alias("fail_count")
       )
       .collect()(0)
 
@@ -358,19 +338,15 @@ object ColumnComparisonAnalyzer extends SparkAnalyzer {
    * Throws: IllegalArgumentException when either column is missing or `value` has no column name.
    */
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
-    val field = rule.field.fold(identity, _.head)
-    val otherField = rule.value
-      .collect { case StringValue(s) => s }
-      .getOrElse(throw new IllegalArgumentException("is_equal_than requires a column name as value"))
+    val field      = rule.field.fold(identity, _.head)
+    val otherField = FailCondition.requireString(rule, "is_equal_than requires a column name as value")
     requireField(df, field)
     requireField(df, otherField)
-
-    val failCond = F.col(field) =!= F.col(otherField)
 
     val result = df
       .agg(
         F.count(F.lit(1)).alias("total"),
-        F.sum(F.when(failCond, 1).otherwise(0)).alias("fail_count")
+        F.sum(F.when(FailCondition(rule), 1).otherwise(0)).alias("fail_count")
       )
       .collect()(0)
 
@@ -413,26 +389,18 @@ object MembershipAnalyzer extends SparkAnalyzer {
     val checkType = rule.checkType
     requireField(df, field)
 
-    val values: Seq[Any] = rule.value match {
-      case Some(ListValue(items)) =>
-        items.map {
-          case StringValue(s) => s
-          case LongValue(l)   => l
-          case DoubleValue(d) => d
-          case other          => other.toString
-        }
-      case _ => throw new IllegalArgumentException("Membership requires a list of values")
-    }
-
-    val failCond = checkType match {
-      case "is_contained_in" | "is_in" => !F.col(field).isin(values: _*)
-      case _                           => F.col(field).isin(values: _*)
+    val items = FailCondition.requireList(rule, "Membership requires a list of values")
+    val values: Seq[Any] = items.map {
+      case StringValue(s) => s
+      case LongValue(l)   => l
+      case DoubleValue(d) => d
+      case other          => other.toString
     }
 
     val result = df
       .agg(
         F.count(F.lit(1)).alias("total"),
-        F.sum(F.when(failCond, 1).otherwise(0)).alias("fail_count")
+        F.sum(F.when(FailCondition(rule), 1).otherwise(0)).alias("fail_count")
       )
       .collect()(0)
 
@@ -470,18 +438,14 @@ object PatternAnalyzer extends SparkAnalyzer {
    * Throws: IllegalArgumentException when the field is missing or the pattern is not a string.
    */
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
-    val field = rule.field.fold(identity, _.head)
-    val pattern = rule.value
-      .collect { case StringValue(s) => s }
-      .getOrElse(throw new IllegalArgumentException("has_pattern requires a regex pattern"))
+    val field   = rule.field.fold(identity, _.head)
+    val pattern = FailCondition.requireString(rule, "has_pattern requires a regex pattern")
     requireField(df, field)
-
-    val failCond = !F.col(field).rlike(pattern)
 
     val result = df
       .agg(
         F.count(F.lit(1)).alias("total"),
-        F.sum(F.when(failCond, 1).otherwise(0)).alias("fail_count")
+        F.sum(F.when(FailCondition(rule), 1).otherwise(0)).alias("fail_count")
       )
       .collect()(0)
 
@@ -518,12 +482,10 @@ object LegitAnalyzer extends SparkAnalyzer {
     val field = rule.field.fold(identity, _.head)
     requireField(df, field)
 
-    val failCond = F.col(field).isNull || (F.trim(F.col(field)) === "")
-
     val result = df
       .agg(
         F.count(F.lit(1)).alias("total"),
-        F.sum(F.when(failCond, 1).otherwise(0)).alias("fail_count")
+        F.sum(F.when(FailCondition(rule), 1).otherwise(0)).alias("fail_count")
       )
       .collect()(0)
 
@@ -569,33 +531,10 @@ object DateAnalyzer extends SparkAnalyzer {
     val checkType = rule.checkType
     requireField(df, field)
 
-    val dateCol = DateExpr.safeToDate(F.col(field))
-    val today   = F.current_date()
-
-    val failCond = checkType match {
-      case "all_date_checks"               => F.col(field).isNotNull && DateExpr.safeToDate(F.col(field)).isNull
-      case "is_today"                      => dateCol =!= today
-      case "is_t_minus_1" | "is_yesterday" => dateCol =!= F.date_sub(today, 1)
-      case "is_t_minus_2"                  => dateCol =!= F.date_sub(today, 2)
-      case "is_t_minus_3"                  => dateCol =!= F.date_sub(today, 3)
-      case "is_past_date"                  => dateCol >= today
-      case "is_future_date"                => dateCol <= today
-      case "is_on_weekday"                 => F.dayofweek(dateCol).isin(1, 7)
-      case "is_on_weekend"                 => !F.dayofweek(dateCol).isin(1, 7)
-      case "is_on_monday"                  => F.dayofweek(dateCol) =!= 2
-      case "is_on_tuesday"                 => F.dayofweek(dateCol) =!= 3
-      case "is_on_wednesday"               => F.dayofweek(dateCol) =!= 4
-      case "is_on_thursday"                => F.dayofweek(dateCol) =!= 5
-      case "is_on_friday"                  => F.dayofweek(dateCol) =!= 6
-      case "is_on_saturday"                => F.dayofweek(dateCol) =!= 7
-      case "is_on_sunday"                  => F.dayofweek(dateCol) =!= 1
-      case other                           => throw new IllegalArgumentException(s"Unknown date check: $other")
-    }
-
     val result = df
       .agg(
         F.count(F.lit(1)).alias("total"),
-        F.sum(F.when(failCond, 1).otherwise(0)).alias("fail_count")
+        F.sum(F.when(FailCondition(rule), 1).otherwise(0)).alias("fail_count")
       )
       .collect()(0)
 
@@ -632,18 +571,15 @@ object DateBetweenAnalyzer extends SparkAnalyzer {
     val field = rule.field.fold(identity, _.head)
     requireField(df, field)
 
-    val (start, end) = rule.value match {
-      case Some(ListValue(StringValue(s) :: StringValue(e) :: Nil)) => (s, e)
-      case _ => throw new IllegalArgumentException("is_date_between requires value=[start, end]")
+    val (start, end) = FailCondition.requirePair(rule, "is_date_between requires value=[start, end]") match {
+      case (StringValue(s), StringValue(e)) => (s, e)
+      case _ => throw new IllegalArgumentException("is_date_between requires [start, end] date strings")
     }
-
-    val dateCol  = DateExpr.safeToDate(F.col(field))
-    val failCond = (dateCol < F.to_date(F.lit(start))) || (dateCol > F.to_date(F.lit(end)))
 
     val result = df
       .agg(
         F.count(F.lit(1)).alias("total"),
-        F.sum(F.when(failCond, 1).otherwise(0)).alias("fail_count")
+        F.sum(F.when(FailCondition(rule), 1).otherwise(0)).alias("fail_count")
       )
       .collect()(0)
 
@@ -680,24 +616,13 @@ object DateComparisonAnalyzer extends SparkAnalyzer {
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
     val field     = rule.field.fold(identity, _.head)
     val checkType = rule.checkType
-    val target = rule.value
-      .collect { case StringValue(s) => s }
-      .getOrElse(throw new IllegalArgumentException(s"$checkType requires a date value"))
+    val target    = FailCondition.requireString(rule, s"$checkType requires a date value")
     requireField(df, field)
-
-    val dateCol    = DateExpr.safeToDate(F.col(field))
-    val targetDate = F.to_date(F.lit(target))
-
-    val failCond = checkType match {
-      case "is_date_after"  => dateCol <= targetDate
-      case "is_date_before" => dateCol >= targetDate
-      case other            => throw new IllegalArgumentException(s"Unknown date comparison: $other")
-    }
 
     val result = df
       .agg(
         F.count(F.lit(1)).alias("total"),
-        F.sum(F.when(failCond, 1).otherwise(0)).alias("fail_count")
+        F.sum(F.when(FailCondition(rule), 1).otherwise(0)).alias("fail_count")
       )
       .collect()(0)
 
@@ -828,18 +753,14 @@ object DateFormatAnalyzer extends SparkAnalyzer {
    * Throws: IllegalArgumentException when the field is missing or the format is not a string.
    */
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
-    val field = rule.field.fold(identity, _.head)
-    val format = rule.value
-      .collect { case StringValue(s) => s }
-      .getOrElse(throw new IllegalArgumentException("validate_date_format requires a format string as value"))
+    val field  = rule.field.fold(identity, _.head)
+    val format = FailCondition.requireString(rule, "validate_date_format requires a format string as value")
     requireField(df, field)
-
-    val failCond = F.try_to_timestamp(F.col(field), F.lit(format)).isNull && F.col(field).isNotNull
 
     val result = df
       .agg(
         F.count(F.lit(1)).alias("total"),
-        F.sum(F.when(failCond, 1).otherwise(0)).alias("fail_count")
+        F.sum(F.when(FailCondition(rule), 1).otherwise(0)).alias("fail_count")
       )
       .collect()(0)
 
@@ -940,16 +861,12 @@ object SatisfiesAnalyzer extends SparkAnalyzer {
    * Throws: IllegalArgumentException when `value` is not a SQL condition string.
    */
   def analyze(df: DataFrame, rule: RuleDefinition): MetricResult = {
-    val condition = rule.value
-      .collect { case StringValue(s) => s }
-      .getOrElse(throw new IllegalArgumentException("satisfies requires a SQL condition as value"))
-
-    val failCond = !F.expr(condition)
+    val condition = FailCondition.requireString(rule, "satisfies requires a SQL condition as value")
 
     val result = df
       .agg(
         F.count(F.lit(1)).alias("total"),
-        F.sum(F.when(failCond, 1).otherwise(0)).alias("fail_count")
+        F.sum(F.when(FailCondition(rule), 1).otherwise(0)).alias("fail_count")
       )
       .collect()(0)
 

@@ -1039,4 +1039,22 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       report.results.head.status shouldBe ValidationStatus.ERROR
     }
   }
+
+  // -------------------------------------------------------------------------
+  // Invalid value handling
+  // -------------------------------------------------------------------------
+
+  "Invalid value handling" should {
+
+    "report ERROR when is_contained_in receives non-list value instead of crashing" in {
+      import io.galileostd.sumeh.rule.StringValue
+      val rule = RuleDefinition.validated(
+        Left("status"),
+        "is_contained_in",
+        value = Some(StringValue("active"))
+      )
+      val report = SparkValidator.validate(dfBasic, Seq(rule))
+      report.results.head.status shouldBe ValidationStatus.ERROR
+    }
+  }
 }
