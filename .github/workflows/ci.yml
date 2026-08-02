@@ -185,11 +185,75 @@ jobs:
             sbt -Dversion="$VERSION" -Dspark.version=$v ++2.13.16 spark/publish
           done
 
-          # Flink 1.20 / 2.1 / 2.2 / 2.3 (sumeh-flink-*) — both Scala versions
+          # Flink 1.20 / 2.0 / 2.1 / 2.2 / 2.3 (sumeh-flink-*) — both Scala versions
           for v in 1.20.0 2.0.0 2.1.0 2.2.0 2.3.0; do
             sbt -Dversion="$VERSION" -Dflink.version=$v ++2.12.18 flink/publish
             sbt -Dversion="$VERSION" -Dflink.version=$v ++2.13.16 flink/publish
           done
+
+  publish-central:
+    needs: [test, coverage]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release' && github.event.action == 'created'
+    permissions:
+      contents: read
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'corretto'
+          cache: 'sbt'
+
+      - uses: sbt/setup-sbt@v1
+
+      - name: Import GPG key
+        env:
+          GNUPGHOME: ${{ runner.temp }}/gnupg
+        run: |
+          mkdir -p "$GNUPGHOME"
+          chmod 700 "$GNUPGHOME"
+          echo "${{ secrets.PGP_SECRET }}" | base64 -d | gpg --batch --import
+
+      - name: Build signed bundle + release to Central Portal
+        env:
+          GNUPGHOME: ${{ runner.temp }}/gnupg
+          PGP_PASSPHRASE: ${{ secrets.PGP_PASSPHRASE }}
+          SONATYPE_USERNAME: ${{ secrets.SONATYPE_USERNAME }}
+          SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
+          CENTRAL_PORTAL: "1"
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+
+          # Core — both Scala versions
+          sbt -Dversion="$VERSION" ++2.12.18 core/publishSigned
+          sbt -Dversion="$VERSION" ++2.13.16 core/publishSigned
+
+          # Spark 3.5 (sumeh-spark-3.5) — both Scala versions
+          sbt -Dversion="$VERSION" -Dspark.version=3.5.0 ++2.12.18 spark/publishSigned
+          sbt -Dversion="$VERSION" -Dspark.version=3.5.0 ++2.13.16 spark/publishSigned
+
+          # Spark 4.x (sumeh-spark-4.0 / 4.1 / 4.2) — Scala 2.13 only
+          for v in 4.0.0 4.1.0 4.2.0; do
+            sbt -Dversion="$VERSION" -Dspark.version=$v ++2.13.16 spark/publishSigned
+          done
+
+          # Flink 1.20 / 2.0 / 2.1 / 2.2 / 2.3 (sumeh-flink-*) — both Scala versions
+          for v in 1.20.0 2.0.0 2.1.0 2.2.0 2.3.0; do
+            sbt -Dversion="$VERSION" -Dflink.version=$v ++2.12.18 flink/publishSigned
+            sbt -Dversion="$VERSION" -Dflink.version=$v ++2.13.16 flink/publishSigned
+          done
+
+          # All 17 artifacts above land in the same local staging bundle
+          # (native sbt Central Portal support, not the dead sbt-sonatype
+          # plugin). sonaUpload ships the bundle and waits for a manual
+          # "Publish" click in the Central Portal UI — switch to sonaRelease
+          # once a full release has cleared validation at least once.
+          sbt -Dversion="$VERSION" sonaUpload
 
   docs-check:
     runs-on: ubuntu-latest

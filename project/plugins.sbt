@@ -12,6 +12,3 @@ addSbtPlugin("com.github.sbt" % "sbt-git" % "2.0.1")
 
 // Plugin GPG
 addSbtPlugin("com.github.sbt" % "sbt-pgp" % "2.3.1")
-
-// Publishing to Maven Central (Sonatype staging)
-addSbtPlugin("org.xerial.sbt" % "sbt-sonatype" % "3.12.2")

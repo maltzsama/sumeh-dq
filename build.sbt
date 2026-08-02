@@ -26,27 +26,44 @@ val scalatestVersion = "3.2.20"
 ThisBuild / versionScheme := Some("early-semver")
 
 // ---------------------------------------------------------------------------
-// Publishing.
+// PGP signing.
 //
-// Artifacts are published to GitHub Packages in CI on release events, gated by
-// the GITHUB_PACKAGES env var (set in the publish job). Publishing to Maven
-// Central / Sonatype requires the repo owner to add the SONATYPE_USERNAME,
-// SONATYPE_PASSWORD, PGP_SECRET and PGP_PASSPHRASE repository secrets — see the
-// publishing PR for the exact checklist.
+// Signs via the system `gpg` binary — sbt-pgp defaults to this already
+// (Bouncy Castle mode is deprecated, so `useGpg` doesn't need to be set).
+// `pgpPassphrase` is read from PGP_PASSPHRASE in CI; locally it falls back
+// to gpg-agent/pinentry.
+// ---------------------------------------------------------------------------
+ThisBuild / pgpSigningKey := Some("05584B29615BA695")
+ThisBuild / pgpPassphrase := sys.env.get("PGP_PASSPHRASE").map(_.toCharArray)
+
+// ---------------------------------------------------------------------------
+// PUBLISHING:
 //
-// TODO(owner): enable Maven Central by adding the Sonatype resolver here and
-// wiring the missing secrets in .github/workflows/ci.yml.
+// Two independent destinations, each gated by its own env var:
+//   - GITHUB_PACKAGES → GitHub Packages (existing CI job)
+//   - CENTRAL_PORTAL → Maven Central via Sonatype Central Portal (native sbt 1.11.0+ support)
+//
+// IMPORTANT:
+//   - DO NOT use sbt-sonatype (deprecated, legacy API retired 2025-06-30)
+//   - Use native sbt support: publishSigned + sonaRelease
+//   - Credentials: SONATYPE_USERNAME and SONATYPE_PASSWORD (Central Portal User Token)
+//   - Namespace io.galileostd must be verified (DNS TXT record)
+//
+// If no env var is set → publishTo = None (safe no-op)
 // ---------------------------------------------------------------------------
 ThisBuild / publishTo := {
+  val centralSnapshots = "https://central.sonatype.com/repository/maven-snapshots/"
   if (sys.env.contains("GITHUB_PACKAGES"))
     Some("GitHub Packages".at("https://maven.pkg.github.com/maltzsama/sumeh-dq"))
-  else None
+  else if (sys.env.contains("CENTRAL_PORTAL")) {
+    if (isSnapshot.value) Some("central-snapshots".at(centralSnapshots))
+    else localStaging.value
+  } else None
 }
 
-// A local `publish` without the GITHUB_PACKAGES env var becomes an explicit
-// no-op instead of failing with a cryptic "repository not specified" error.
-// `publishLocal` is unaffected.
-lazy val publishSkip = Def.setting(!sys.env.contains("GITHUB_PACKAGES"))
+lazy val publishSkip = Def.setting(
+  !sys.env.contains("GITHUB_PACKAGES") && !sys.env.contains("CENTRAL_PORTAL")
+)
 
 ThisBuild / credentials ++= sys.env
   .get("GITHUB_TOKEN")
