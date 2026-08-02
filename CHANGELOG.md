@@ -1,3 +1,10 @@
+## [0.1.1](https://github.com/maltzsama/sumeh-dq/compare/v0.1.0...v0.1.1) (2026-08-02)
+
+
+### Bug Fixes
+
+* **ci:** use RELEASE_TOKEN for semantic-release ([8875d94](https://github.com/maltzsama/sumeh-dq/commit/8875d941625c1db9175741d53164a0cbe4d8384d))
+
 # [0.1.0](https://github.com/maltzsama/sumeh-dq/compare/v0.0.0...v0.1.0) (2026-08-02)
 
 
