@@ -183,6 +183,21 @@ class FlinkValidatorSpec extends AnyWordSpec with Matchers {
       json should include("\"field\":\"age\"")
     }
 
+    "emit _dq_errors with the same eight fields as the Spark struct" in {
+      val validated = FlinkValidator.validate(
+        streamOf(positionalRow(1, null, 30)),
+        Seq(RuleDefinition.validated(Left("name"), "is_complete"))
+      )
+
+      val row = validated.toNative.executeAndCollect(10).asScala.head
+      val idx = validated.toNative.getType.asInstanceOf[RowTypeInfo].getFieldIndex("_dq_errors")
+      val obj = ujson.read(row.getField(idx).toString).arr.head.obj
+
+      obj.keys.toList shouldBe List(
+        "rule_id", "check_type", "field", "category", "expected", "actual", "message", "timestamp"
+      )
+    }
+
     "throw at job construction when is_between has no list value" in {
       val stream = streamOf(positionalRow(1, "alice", 30))
       val bad    = RuleDefinition.validated(Left("age"), "is_between")
