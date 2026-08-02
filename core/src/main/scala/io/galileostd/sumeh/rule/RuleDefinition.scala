@@ -123,7 +123,7 @@ object RuleDefinition {
    *
    * Throws: [[io.galileostd.sumeh.exception.SumehException]] when `checkType` is not registered.
    */
-  def validated( // ← era apply
+  def validated(
       field: Either[String, List[String]],
       checkType: String,
       value: Option[RuleValue] = None,

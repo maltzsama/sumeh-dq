@@ -86,7 +86,7 @@ private[flink] class DQProcessFunction(
  * uniformly via `from_json`.
  */
 final private[flink] case class DQError(
-    rule_id: String,
+    result_id: String,
     check_type: String,
     field: String,
     category: String,
@@ -188,7 +188,7 @@ private[flink] object DQProcessFunction {
 
   private def errorToJson(e: DQError): ujson.Obj =
     ujson.Obj(
-      "rule_id"    -> ujson.Str(e.rule_id),
+      "result_id"  -> ujson.Str(e.result_id),
       "check_type" -> ujson.Str(e.check_type),
       "field"      -> ujson.Str(e.field),
       "category"   -> ujson.Str(e.category),
@@ -386,7 +386,7 @@ private[flink] object DQProcessFunction {
    */
   private def buildError(rule: RuleDefinition, message: Option[String] = None): DQError =
     DQError(
-      rule_id = java.util.UUID.randomUUID().toString,
+      result_id = java.util.UUID.randomUUID().toString,
       check_type = rule.checkType,
       field = rule.fieldName,
       category = rule.category,

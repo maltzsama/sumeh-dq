@@ -362,7 +362,7 @@ class DQProcessFunctionSpec extends AnyWordSpec with Matchers {
       val json = DQProcessFunction.errorsToJson(
         List(
           DQError(
-            rule_id = "r1",
+            result_id = "r1",
             check_type = "is_complete",
             field = "name",
             category = "completeness",
@@ -375,7 +375,7 @@ class DQProcessFunctionSpec extends AnyWordSpec with Matchers {
       json should include("\"check_type\":\"is_complete\"")
       json should include("\"field\":\"name\"")
       json should include("\"category\":\"completeness\"")
-      json should include("\"rule_id\":\"r1\"")
+      json should include("\"result_id\":\"r1\"")
     }
 
     "produce an empty array when there are no errors" in {

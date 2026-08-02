@@ -25,7 +25,7 @@ object FlinkValidator {
    * real sources are supported. The output type is declared explicitly, keeping the pipeline on the row type instead of
    * falling back to Kryo.
    *
-   * Note: `_dq_errors` is a JSON string carrying `rule_id`, `check_type`, `field`, `category`, `message`, `expected`
+   * Note: `_dq_errors` is a JSON string carrying `result_id`, `check_type`, `field`, `category`, `message`, `expected`
    * and `actual` — the same fields as the Spark `array<struct<...>>`, but serialized as text. `_dq_skipped` is a
    * `checkType:reason` string with `|` separators, matching Spark. Cross-engine sinks must handle the two `_dq_errors`
    * shapes.

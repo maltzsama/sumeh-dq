@@ -1230,7 +1230,7 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       val expected = ArrayType(
         StructType(
           Seq(
-            StructField("rule_id", StringType, nullable = true),
+            StructField("result_id", StringType, nullable = true),
             StructField("check_type", StringType, nullable = true),
             StructField("field", StringType, nullable = true),
             StructField("category", StringType, nullable = true),
@@ -1401,6 +1401,26 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
           if (RuleRegistry.getRule(ct).get.engines.contains("spark"))
             noException should be thrownBy SparkRegistry.getAnalyzer(ct)
       }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Result identity
+  // -------------------------------------------------------------------------
+
+  "Result identity" should {
+
+    "correlate a failing row with the result that flagged it" in {
+      val rules    = Seq(RuleDefinition.validated(Left("name"), "is_complete", threshold = 1.0))
+      val report   = SparkValidator.validate(dfBasic, rules)
+      val (_, bad) = report.dfValidated.get.splitByErrors()
+
+      val idOnRow = bad
+        .select(F.col("_dq_errors")(0)("result_id"))
+        .collect()(0)
+        .getString(0)
+
+      report.results.map(_.id).toSet should contain(idOnRow)
     }
   }
 }

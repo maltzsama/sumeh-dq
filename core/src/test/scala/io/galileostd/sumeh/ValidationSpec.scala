@@ -14,7 +14,6 @@ class ValidationSpec extends AnyWordSpec with Matchers {
       field: String = "email",
       status: ValidationStatus = ValidationStatus.PASS,
       passRate: Option[Double] = Some(1.0),
-      violatingRowIds: List[Long] = List.empty,
       message: Option[String] = None,
       level: ValidationLevel = ValidationLevel.ROW,
       category: String = "completeness"
@@ -23,7 +22,6 @@ class ValidationSpec extends AnyWordSpec with Matchers {
     field = Left(field),
     status = status,
     passRate = passRate,
-    violatingRowIds = violatingRowIds,
     message = message,
     level = level,
     category = category
@@ -91,10 +89,6 @@ class ValidationSpec extends AnyWordSpec with Matchers {
 
     "default status to ERROR" in {
       ValidationResult().status shouldBe ValidationStatus.ERROR
-    }
-
-    "default violatingRowIds to empty" in {
-      ValidationResult().violatingRowIds shouldBe empty
     }
 
     "default metadata to empty" in {
@@ -223,14 +217,6 @@ class ValidationSpec extends AnyWordSpec with Matchers {
       s("failed") shouldBe 1
       s("errors") shouldBe 1
       s("total_validations") shouldBe 3
-    }
-
-    "cap sample violating ids" in {
-      val ids         = (0L until 200L).toList
-      val result      = makeResult(status = ValidationStatus.FAIL, violatingRowIds = ids)
-      val s           = makeReport(List(result)).summary(maxSampleIds = 50)
-      val validations = s("validations").asInstanceOf[List[Map[String, Any]]]
-      validations.head("sample_violating_ids").asInstanceOf[List[_]] should have size 50
     }
 
     "preserve engine name" in {

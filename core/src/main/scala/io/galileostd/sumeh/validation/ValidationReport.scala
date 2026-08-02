@@ -109,15 +109,13 @@ final case class ValidationReport[DF](
    * Flat JSON-friendly map for dashboards / sinks / alerting.
    *
    * Includes run-level totals (`total_rows`, `passed`, `failed`, `errors`, `skipped`, `pass_rate`) and a per-rule
-   * `validations` list with status, measured vs. expected values, and a sample of violating row ids. `fail_count` comes
-   * from the rule's `metadata("fail_count")` (populated by the engines); `violatingRowIds` is reserved and not yet
-   * populated.
-   *
-   * Args: maxSampleIds: Maximum number of violating row ids to include per rule.
+   * `validations` list. The `result_id` field is the same value that appears in `_dq_errors[i].result_id`, allowing a
+   * failing row to be correlated back to the validation that flagged it. `fail_count` comes from the rule's
+   * `metadata("fail_count")` (populated by the engines).
    *
    * Returns: A serializable map describing the run.
    */
-  def summary(maxSampleIds: Int = 100): Map[String, Any] = Map(
+  def summary(): Map[String, Any] = Map(
     "timestamp"         -> timestamp.toString,
     "engine"            -> engine,
     "total_rows"        -> totalRows,
@@ -131,18 +129,17 @@ final case class ValidationReport[DF](
     "validations" -> results.map {
       r =>
         Map(
-          "rule_id"              -> r.ruleId,
-          "check_type"           -> r.checkType,
-          "field"                -> r.fieldName,
-          "category"             -> r.category,
-          "level"                -> r.level.toString,
-          "status"               -> r.status.toString,
-          "pass_rate"            -> r.passRate.map(java.lang.Double.valueOf(_)).orNull,
-          "expected"             -> r.expectedValue.orNull,
-          "actual"               -> r.actualValue.map(java.lang.Double.valueOf(_)).orNull,
-          "message"              -> r.message.orNull,
-          "fail_count"           -> failCountOf(r),
-          "sample_violating_ids" -> r.violatingRowIds.take(maxSampleIds)
+          "result_id"  -> r.id,
+          "check_type" -> r.checkType,
+          "field"      -> r.fieldName,
+          "category"   -> r.category,
+          "level"      -> r.level.toString,
+          "status"     -> r.status.toString,
+          "pass_rate"  -> r.passRate.map(java.lang.Double.valueOf(_)).orNull,
+          "expected"   -> r.expectedValue.orNull,
+          "actual"     -> r.actualValue.map(java.lang.Double.valueOf(_)).orNull,
+          "message"    -> r.message.orNull,
+          "fail_count" -> failCountOf(r)
         )
     }
   )

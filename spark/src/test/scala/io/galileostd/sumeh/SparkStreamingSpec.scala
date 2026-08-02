@@ -185,5 +185,32 @@ class SparkStreamingSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       bq.stop()
       spark.sql("select * from dq_bad_none").count() shouldBe 2
     }
+
+    "correlate a failing row with the result that flagged it in streaming" in {
+      val report = SparkValidator.validate(
+        streamOf(writeRows(rows: _*)),
+        Seq(
+          RuleDefinition.validated(Left("name"), "is_complete"),
+          RuleDefinition.validated(Left("age"), "is_positive")
+        )
+      )
+
+      val q = report.dfValidated.get.toNative.writeStream
+        .format("memory")
+        .queryName("dq_corr")
+        .outputMode("append")
+        .start()
+      q.processAllAvailable()
+      q.stop()
+
+      val out = spark.sql("select * from dq_corr")
+      val bad = out.filter(F.size(F.col("_dq_errors")) > 0)
+      val idOnRow = bad
+        .select(F.col("_dq_errors")(0)("result_id"))
+        .collect()(0)
+        .getString(0)
+
+      report.results.filter(_.checkType == "is_complete").map(_.id).toSet should contain(idOnRow)
+    }
   }
 }

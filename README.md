@@ -57,6 +57,7 @@ Each engine artifact is compiled against the exact version in its name and publi
 | `sumeh-spark-4.1` | Spark 4.1.0 | 2.13 |
 | `sumeh-spark-4.2` | Spark 4.2.0 | 2.13 |
 | `sumeh-flink-1.20` | Flink 1.20.0 | 2.12, 2.13 |
+| `sumeh-flink-2.0` | Flink 2.0.0 | 2.12, 2.13 |
 | `sumeh-flink-2.1` | Flink 2.1.0 | 2.12, 2.13 |
 | `sumeh-flink-2.2` | Flink 2.2.0 | 2.12, 2.13 |
 | `sumeh-flink-2.3` | Flink 2.3.0 | 2.12, 2.13 |
@@ -82,6 +83,7 @@ libraryDependencies ++= Seq(
   "io.galileostd" %% "sumeh-spark-4.1"   % "0.1.0", // Spark 4.1
   "io.galileostd" %% "sumeh-spark-4.2"   % "0.1.0", // Spark 4.2
   "io.galileostd" %% "sumeh-flink-1.20"  % "0.1.0", // Flink 1.20
+  "io.galileostd" %% "sumeh-flink-2.0"   % "0.1.0", // Flink 2.0
   "io.galileostd" %% "sumeh-flink-2.1"   % "0.1.0", // Flink 2.1
   "io.galileostd" %% "sumeh-flink-2.2"   % "0.1.0", // Flink 2.2
   "io.galileostd" %% "sumeh-flink-2.3"   % "0.1.0"  // Flink 2.3
@@ -394,7 +396,7 @@ sbt -batch "coverage" "test" "coverageAggregate" "coverageReport"
 sbt scalafmtAll scalafmtCheckAll
 ```
 
-**Engine floors:** each engine artifact is compiled against the exact version in its name — `sumeh-spark-3.5` against Spark 3.5.0, `sumeh-spark-4.1` against 4.1.0, `sumeh-flink-2.2` against Flink 2.2.0, and so on. The Spark floor is **3.5**, not 3.0: `DateExpr` relies on `try_to_timestamp`, which does not exist before Spark 3.5. The CI matrix exercises Spark 3.5.0 / 4.0.0 / 4.1.0 / 4.2.0 and Flink 1.20.0 / 2.1.0 / 2.2.0 / 2.3.0, and every published artifact is compiled against the version it is tested against.
+**Engine floors:** each engine artifact is compiled against the exact version in its name — `sumeh-spark-3.5` against Spark 3.5.0, `sumeh-spark-4.1` against 4.1.0, `sumeh-flink-2.2` against Flink 2.2.0, and so on. The Spark floor is **3.5**, not 3.0: `DateExpr` relies on `try_to_timestamp`, which does not exist before Spark 3.5. The CI matrix exercises Spark 3.5.0 / 4.0.0 / 4.1.0 / 4.2.0 and Flink 1.20.0 / 2.0.0 / 2.1.0 / 2.2.0 / 2.3.0, and every published artifact is compiled against the version it is tested against.
 
 ---
 

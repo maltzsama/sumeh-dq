@@ -4,10 +4,21 @@ import io.galileostd.sumeh.engine.Splittable
 import org.apache.spark.sql.{ functions => F, DataFrame }
 
 /**
- * Wrapper around a Spark DataFrame that carries a `_dq_errors` column.
+ * DataFrame annotated with quality columns by [[io.galileostd.sumeh.spark.SparkValidator]].
  *
- * Produced by [[io.galileostd.sumeh.spark.SparkValidator]]. Bad rows carry a non-empty `_dq_errors` struct; use
- * `splitByErrors` (or the implicit `Splittable`) to separate good from bad in one pass.
+ *   - `_dq_errors`: `array<struct<result_id, check_type, field, category, message, expected, actual>>`. Empty for rows
+ *     with no violation. The `result_id` field matches the `result_id` in
+ *     [[io.galileostd.sumeh.validation.ValidationResult.id]] and
+ *     [[io.galileostd.sumeh.validation.ValidationReport.summary]], so a failing row can be correlated back to the
+ *     validation that flagged it.
+ *   - `_dq_skipped`: a string with `checkType:reason` entries for every skipped rule, separated by `|`. This is a
+ *     run-level property — the value is the same in every row.
+ *
+ * In the Flink engine, `_dq_errors` is a string JSON carrying the same fields, serialized as text. Cross-engine sinks
+ * must handle the two shapes.
+ *
+ * Use [[splitByErrors]] (or the implicit [[io.galileostd.sumeh.engine.Splittable]]) to separate good from bad in one
+ * pass.
  *
  * Args: df: The validated DataFrame, with the `_dq_errors` column.
  */

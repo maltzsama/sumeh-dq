@@ -70,6 +70,12 @@ jobs:
           # Flink 2.x — both Scala versions
           - module: flink
             scala: '2.12.18'
+            opts: '-Dflink.version=2.0.0'
+          - module: flink
+            scala: '2.13.16'
+            opts: '-Dflink.version=2.0.0'
+          - module: flink
+            scala: '2.12.18'
             opts: '-Dflink.version=2.1.0'
           - module: flink
             scala: '2.13.16'
@@ -180,7 +186,7 @@ jobs:
           done
 
           # Flink 1.20 / 2.1 / 2.2 / 2.3 (sumeh-flink-*) — both Scala versions
-          for v in 1.20.0 2.1.0 2.2.0 2.3.0; do
+          for v in 1.20.0 2.0.0 2.1.0 2.2.0 2.3.0; do
             sbt -Dversion="$VERSION" -Dflink.version=$v ++2.12.18 flink/publish
             sbt -Dversion="$VERSION" -Dflink.version=$v ++2.13.16 flink/publish
           done

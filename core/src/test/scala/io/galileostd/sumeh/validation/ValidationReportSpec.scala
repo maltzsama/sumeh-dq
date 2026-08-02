@@ -68,14 +68,13 @@ class ValidationReportSpec extends AnyWordSpec with Matchers {
       s("execution_time_ms") shouldBe 2.5
     }
 
-    "respect maxSampleIds for violating ids and report fail_count from metadata" in {
+    "report fail_count from metadata" in {
       val report = ValidationReport[Unit](
         List(
           ValidationResult(
             checkType = "is_complete",
             field = Left("email"),
             status = ValidationStatus.FAIL,
-            violatingRowIds = (0L to 9L).toList,
             metadata = Map("fail_count" -> 10L)
           )
         ),
@@ -84,11 +83,10 @@ class ValidationReportSpec extends AnyWordSpec with Matchers {
         "spark"
       )
       val validation = report
-        .summary(maxSampleIds = 3)("validations")
+        .summary()("validations")
         .asInstanceOf[List[_]]
         .head
         .asInstanceOf[Map[String, Any]]
-      validation("sample_violating_ids").asInstanceOf[List[_]] shouldBe List(0L, 1L, 2L)
       validation("fail_count") shouldBe 10L
     }
 

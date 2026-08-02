@@ -12,17 +12,17 @@ import io.galileostd.sumeh.rule.RuleValue
  * and a human-readable message, so downstream consumers (dashboards, alerting, sinks) can act on it without re-deriving
  * the comparison.
  *
- * Args: id: Unique identifier for the result. timestamp: When the validation ran. ruleId: Rule identifier. level: ROW
- * or TABLE. category: The rule category (e.g. `"completeness"`, `"uniqueness"`). checkType: The rule type (e.g.
- * `"is_complete"`). field: Column name(s) validated. status: PASS, FAIL, ERROR, or SKIPPED. passRate: Percentage of
- * rows that passed (row-level rules only). expectedValue: What the rule expected. actualValue: What was actually
- * measured. violatingRowIds: Reserved — not yet populated; engines report counts via `metadata("fail_count")`. message:
- * Human-readable explanation (e.g. why a rule failed). metadata: Extra context from the metric.
+ * Args: id: Unique identifier of this validation result, generated once per execution. This is the same value that
+ * appears in `_dq_errors[i].result_id`, and it is how a failing row is correlated back to the validation that flagged
+ * it. Not stable across executions. timestamp: When the validation ran. level: ROW or TABLE. category: The rule
+ * category (e.g. `"completeness"`, `"uniqueness"`). checkType: The rule type (e.g. `"is_complete"`). field: Column
+ * name(s) validated. status: PASS, FAIL, ERROR, or SKIPPED. passRate: Percentage of rows that passed (row-level rules
+ * only). expectedValue: What the rule expected. actualValue: What was actually measured. message: Human-readable
+ * explanation (e.g. why a rule failed). metadata: Extra context from the metric.
  */
 final case class ValidationResult(
     id: String = UUID.randomUUID().toString,
     timestamp: LocalDateTime = LocalDateTime.now(),
-    ruleId: String = "",
     level: ValidationLevel = ValidationLevel.ROW,
     category: String = "unknown",
     checkType: String = "",
@@ -31,7 +31,6 @@ final case class ValidationResult(
     passRate: Option[Double] = None,
     expectedValue: Option[RuleValue] = None,
     actualValue: Option[Double] = None,
-    violatingRowIds: List[Long] = List.empty,
     message: Option[String] = None,
     metadata: Map[String, Any] = Map.empty
 ) {
