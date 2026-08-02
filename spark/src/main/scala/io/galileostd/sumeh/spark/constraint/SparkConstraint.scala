@@ -21,9 +21,9 @@ trait SparkConstraint {
   /**
    * Checks a metric against the rule.
    *
-   * Args: metric: The computed metric. rule: The rule with its threshold/value.
-   *
-   * Returns: The `ValidationResult`.
+   * @param metric The computed metric.
+   * @param rule The rule with its threshold/value.
+   * @return pass or fail; `passRate` holds the fraction of rows that passed, in `[0.0, 1.0]`
    */
   def check(metric: MetricResult, rule: RuleDefinition): ValidationResult
 
@@ -33,9 +33,8 @@ trait SparkConstraint {
    * Uses `Locale.ROOT` so the message never depends on the JVM's default locale (which would render `1,00` on a pt-BR
    * host).
    *
-   * Args: fraction: The fraction to format.
-   *
-   * Returns: A string like `"98.00"`.
+   * @param fraction The fraction to format.
+   * @return a percentage with two decimal places, e.g. `"98.00"`
    */
   protected def pct(fraction: Double): String =
     String.format(Locale.ROOT, "%.2f", Double.box(fraction * 100))
@@ -55,9 +54,9 @@ object CompletenessConstraint extends SparkConstraint {
   /**
    * Compares the completeness metric against the rule's threshold.
    *
-   * Args: metric: A completeness metric (value = non-null fraction). rule: The rule carrying the threshold.
-   *
-   * Returns: PASS when `metric.value >= rule.threshold`, otherwise FAIL with a percentage message.
+   * @param metric A completeness metric (value = non-null fraction).
+   * @param rule The rule carrying the threshold.
+   * @return `PASS` if the metric fraction meets the rule threshold; `FAIL` with a percentage otherwise
    */
   def check(metric: MetricResult, rule: RuleDefinition): ValidationResult = {
     val passed = metric.value >= rule.threshold
@@ -96,9 +95,9 @@ object UniquenessConstraint extends SparkConstraint {
   /**
    * Compares the uniqueness metric against the rule's threshold.
    *
-   * Args: metric: A uniqueness metric (value = non-duplicate fraction). rule: The rule carrying the threshold.
-   *
-   * Returns: PASS when `metric.value >= rule.threshold`, otherwise FAIL with a percentage message.
+   * @param metric A uniqueness metric (value = non-duplicate fraction).
+   * @param rule The rule carrying the threshold.
+   * @return `PASS` if the metric fraction meets the rule threshold; `FAIL` with a percentage otherwise
    */
   def check(metric: MetricResult, rule: RuleDefinition): ValidationResult = {
     val passed = metric.value >= rule.threshold
@@ -137,9 +136,9 @@ object GenericConstraint extends SparkConstraint {
   /**
    * Compares a pass-rate metric against the rule's threshold.
    *
-   * Args: metric: Any pass-rate metric (value in `[0.0, 1.0]`). rule: The rule carrying the threshold.
-   *
-   * Returns: PASS when `metric.value >= rule.threshold`, otherwise FAIL with a percentage message.
+   * @param metric Any pass-rate metric (value in `[0.0, 1.0]`).
+   * @param rule The rule carrying the threshold.
+   * @return `PASS` if the metric fraction meets the rule threshold; `FAIL` with a percentage otherwise
    */
   def check(metric: MetricResult, rule: RuleDefinition): ValidationResult = {
     val passed = metric.value >= rule.threshold
@@ -184,12 +183,10 @@ object AggregationConstraint extends SparkConstraint {
   /**
    * Compares an aggregation metric against the rule's expected value.
    *
-   * Args: metric: An aggregation metric (value = the aggregated number). rule: The rule carrying the expected `value`
-   * and relative `tolerance`.
-   *
-   * Returns: PASS when the measured value matches the expectation within tolerance, otherwise FAIL.
-   *
-   * Throws: IllegalArgumentException when `value` is missing or not numeric.
+   * @param metric An aggregation metric (value = the aggregated number).
+   * @param rule The rule carrying the expected `value` and relative `tolerance`.
+   * @return PASS when the measured value matches the expectation within tolerance, otherwise FAIL.
+   * @throws java.lang.IllegalArgumentException when `value` is missing or not numeric.
    */
   def check(metric: MetricResult, rule: RuleDefinition): ValidationResult = {
     val expected = rule.value
@@ -239,9 +236,9 @@ object SchemaConstraint extends SparkConstraint {
   /**
    * Compares the schema metric's `passed` flag.
    *
-   * Args: metric: A schema metric (value `1.0`/`0.0`, `passed` flag in metadata). rule: The rule being checked.
-   *
-   * Returns: PASS when the schema report passed, otherwise FAIL listing the type errors.
+   * @param metric A schema metric (value `1.0`/`0.0`, `passed` flag in metadata).
+   * @param rule The rule being checked.
+   * @return PASS when the schema report passed, otherwise FAIL listing the type errors.
    */
   def check(metric: MetricResult, rule: RuleDefinition): ValidationResult = {
     val passed = metric.metadata.get("passed").exists(_.asInstanceOf[Boolean])

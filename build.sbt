@@ -25,6 +25,23 @@ val scalatestVersion = "3.2.20"
 
 ThisBuild / versionScheme := Some("early-semver")
 
+def docOptions(moduleTitle: String) = Def.setting {
+  Seq(
+    "-doc-title",
+    moduleTitle,
+    "-doc-version",
+    version.value,
+    "-doc-footer",
+    "© 2026 GalileoStd.io · Apache 2.0",
+    "-implicits",
+    "-groups",
+    "-sourcepath",
+    (ThisBuild / baseDirectory).value.getAbsolutePath,
+    "-doc-source-url",
+    s"https://github.com/maltzsama/sumeh-dq/tree/main/€{FILE_PATH_EXT}#L€{FILE_LINE}"
+  )
+}
+
 // ---------------------------------------------------------------------------
 // PGP signing.
 //
@@ -33,8 +50,9 @@ ThisBuild / versionScheme := Some("early-semver")
 // `pgpPassphrase` is read from PGP_PASSPHRASE in CI; locally it falls back
 // to gpg-agent/pinentry.
 // ---------------------------------------------------------------------------
-ThisBuild / pgpSigningKey := Some("05584B29615BA695")
+ThisBuild / pgpSigningKey := sys.env.get("PGP_SECRET")
 ThisBuild / pgpPassphrase := sys.env.get("PGP_PASSPHRASE").map(_.toCharArray)
+Global / excludeLintKeys ++= Set(pgpPassphrase, pgpSigningKey)
 
 // ---------------------------------------------------------------------------
 // PUBLISHING:
@@ -82,7 +100,8 @@ lazy val core = (project in file("core"))
       "org.scalatest" %% "scalatest" % scalatestVersion % Test
     ),
     publish / skip      := publishSkip.value,
-    publishLocal / skip := false
+    publishLocal / skip := false,
+    Compile / doc / scalacOptions ++= docOptions("Sumeh Core").value
   )
 
 lazy val sparkVersion = settingKey[String]("Spark version")
@@ -122,7 +141,8 @@ lazy val spark = (project in file("spark"))
       "--add-opens=java.base/sun.nio.cs=ALL-UNNAMED",
       "--add-opens=java.base/sun.security.action=ALL-UNNAMED",
       "--add-opens=java.base/sun.util.calendar=ALL-UNNAMED"
-    )
+    ),
+    Compile / doc / scalacOptions ++= docOptions("Sumeh Spark").value
   )
 
 lazy val flinkVersion = settingKey[String]("Flink version")
@@ -162,7 +182,8 @@ lazy val flink = (project in file("flink"))
       "--add-opens=java.base/sun.nio.cs=ALL-UNNAMED",
       "--add-opens=java.base/sun.security.action=ALL-UNNAMED",
       "--add-opens=java.base/sun.util.calendar=ALL-UNNAMED"
-    )
+    ),
+    Compile / doc / scalacOptions ++= docOptions("Sumeh Flink").value
   )
 
 lazy val root = (project in file("."))

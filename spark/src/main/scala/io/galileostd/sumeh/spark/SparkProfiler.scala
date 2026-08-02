@@ -24,11 +24,18 @@ object SparkProfiler {
   /**
    * Statistics for a single column.
    *
-   * Args: `type`: Canonical column type. nullable: Whether the column allows nulls. rowCount: Total rows profiled.
-   * completeness: Fraction of non-null values in `[0.0, 1.0]`. distinctCount: Number of distinct values. nullCount:
-   * Estimated number of nulls (`round(rowCount * (1 - completeness))`). uniqueness: `distinctCount / rowCount`. min:
-   * Numeric minimum (None for non-numeric columns). max: Numeric maximum. mean: Numeric mean. stdDev: Numeric standard
-   * deviation. sum: Numeric sum.
+   * @param `type` The stored `field.dataType.typeName` value.
+   * @param nullable Whether the column allows nulls.
+   * @param rowCount Total rows profiled.
+   * @param completeness Fraction of non-null values in `[0.0, 1.0]`.
+   * @param distinctCount Number of distinct values.
+   * @param nullCount Exact null-count aggregation returned by `statLong`.
+   * @param uniqueness `distinctCount / rowCount`.
+   * @param min Numeric minimum (None for non-numeric columns).
+   * @param max Numeric maximum.
+   * @param mean Numeric mean.
+   * @param stdDev Numeric standard deviation.
+   * @param sum Numeric sum.
    */
   final case class ColumnProfile(
       `type`: String,
@@ -48,7 +55,7 @@ object SparkProfiler {
     /**
      * Flat map form of the profile.
      *
-     * Returns: A serializable map with snake_case keys; numeric stats are `null` when absent.
+     * @return A serializable map with snake_case keys; numeric stats are `null` when absent.
      */
     def toMap: Map[String, Any] = Map(
       "type"           -> `type`,
@@ -69,8 +76,8 @@ object SparkProfiler {
   /**
    * Column-level profile for a full DataFrame.
    *
-   * Args: tableStats: Run-level stats (`total_rows`, `columns_count`, `execution_time_ms`). columnProfiles: Column name
-   * → [[ColumnProfile]].
+   * @param tableStats Run-level stats (`total_rows`, `columns_count`, `execution_time_ms`).
+   * @param columnProfiles Column name → [[ColumnProfile]].
    */
   final case class ProfileReport(
       tableStats: Map[String, Any],
@@ -80,7 +87,7 @@ object SparkProfiler {
     /**
      * Flat map form of the report, with column profiles flattened to maps.
      *
-     * Returns: A map shaped `{ "table_stats": {...}, "column_profiles": { col -> {...} } }`.
+     * @return A map shaped `{ "table_stats": {...}, "column_profiles": { col -> {...} } }`.
      */
     def toMap: Map[String, Any] = Map(
       "table_stats"     -> tableStats,
@@ -90,7 +97,7 @@ object SparkProfiler {
     /**
      * JSON payload for dashboards / metrics endpoints.
      *
-     * Returns: The report as a JSON string.
+     * @return The report as a JSON string.
      */
     def toJson: String = {
       def toValue(v: Any): ujson.Value = v match {
@@ -127,10 +134,9 @@ object SparkProfiler {
    * Runs a single aggregation computing every statistic for every column at once, so the number of Spark jobs does not
    * grow with the column count.
    *
-   * Args: df: The DataFrame to profile. sampleFraction: Optional fraction in `(0.0, 1.0)` to sample (with a fixed seed)
-   * before profiling.
-   *
-   * Returns: A [[ProfileReport]] with table stats and per-column profiles.
+   * @param df The DataFrame to profile.
+   * @param sampleFraction Optional fraction in `(0.0, 1.0)` to sample (with a fixed seed) before profiling.
+   * @return A [[ProfileReport]] with table stats and per-column profiles.
    */
   def profile(df: DataFrame, sampleFraction: Option[Double] = None): ProfileReport = {
     val target = sampleFraction match {
@@ -187,9 +193,8 @@ object SparkProfiler {
   /**
    * Whether a column type is numeric (or decimal) and gets the full numeric statistics.
    *
-   * Args: f: The struct field.
-   *
-   * Returns: `true` for byte/short/int/long/float/double/decimal columns.
+   * @param f The struct field.
+   * @return `true` for byte/short/int/long/float/double/decimal columns.
    */
   private def isNumeric(f: StructField): Boolean =
     numericTypes.contains(f.dataType) || f.dataType.isInstanceOf[DecimalType]
@@ -197,10 +202,11 @@ object SparkProfiler {
   /**
    * Reads a long statistic from the aggregation row.
    *
-   * Args: field: The column name. stat: The statistic key. row: The result row. index: The (field, stat) → position
-   * map.
-   *
-   * Returns: The long value.
+   * @param field The column name.
+   * @param stat The statistic key.
+   * @param row The result row.
+   * @param index The (field, stat) → position map.
+   * @return The long value.
    */
   private def statLong(
       field: String,
@@ -218,10 +224,11 @@ object SparkProfiler {
    * `min`/`max`/`mean`/`stddev`/`sum` are null on an empty or all-null column. Never call `getAs[Double]` on those
    * directly — unboxing turns null into `0.0` silently.
    *
-   * Args: field: The column name. stat: The statistic key. row: The result row. index: The (field, stat) → position
-   * map.
-   *
-   * Returns: The double value, or `None` when null.
+   * @param field The column name.
+   * @param stat The statistic key.
+   * @param row The result row.
+   * @param index The (field, stat) → position map.
+   * @return The double value, or `None` when null.
    */
   private def statOpt(
       field: String,
@@ -236,10 +243,11 @@ object SparkProfiler {
   /**
    * Assembles a [[ColumnProfile]] from the single-pass aggregation row.
    *
-   * Args: field: The schema field. totalRows: Total rows (from the aggregation). row: The result row. index: The
-   * (field, stat) → position map.
-   *
-   * Returns: The column profile.
+   * @param field The schema field.
+   * @param totalRows Total rows (from the aggregation).
+   * @param row The result row.
+   * @param index The (field, stat) → position map.
+   * @return The column profile.
    */
   private def buildProfile(
       field: StructField,

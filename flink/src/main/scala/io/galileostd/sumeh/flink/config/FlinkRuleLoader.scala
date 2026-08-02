@@ -18,9 +18,8 @@ object FlinkRuleLoader {
   /**
    * Collects all rows of a TableResult and closes the iterator.
    *
-   * Args: result: The TableResult to drain.
-   *
-   * Returns: A List of all collected rows.
+   * @param result The TableResult to drain.
+   * @return A List of all collected rows.
    */
   private def drain(result: TableResult): List[Row] = {
     val it = result.collect()
@@ -34,11 +33,9 @@ object FlinkRuleLoader {
   /**
    * Load rules from a Flink Table.
    *
-   * Args: table: A Flink Table (already registered or from a query).
-   *
-   * Returns: List of RuleDefinitions.
-   *
-   * Throws: IllegalArgumentException if `field` or `check_type` columns are missing.
+   * @param table A Flink Table (already registered or from a query).
+   * @return List of RuleDefinitions.
+   * @throws java.lang.IllegalArgumentException if `field` or `check_type` columns are missing.
    */
   def fromTable(table: Table): List[RuleDefinition] = {
     val fieldNames = table.getResolvedSchema.getColumnNames.asScala.toArray
@@ -64,10 +61,10 @@ object FlinkRuleLoader {
   /**
    * Load rules from a Flink Table that has a single JSON column.
    *
-   * Args: table: The source table (must have a column with JSON). column: The column name containing JSON. tableEnv:
-   * The TableEnvironment (needed for sqlQuery).
-   *
-   * Returns: List of RuleDefinitions parsed from each JSON row.
+   * @param table The source table (must have a column with JSON).
+   * @param column The column name containing JSON.
+   * @param tableEnv The TableEnvironment (needed for sqlQuery).
+   * @return List of RuleDefinitions parsed from each JSON row.
    */
   def fromJsonColumn(
       table: Table,
@@ -100,12 +97,10 @@ object FlinkRuleLoader {
   /**
    * Load rules from a TableResult (e.g., from executeSql).
    *
-   * Args: result: TableResult from a query. fieldNames: The field names (must be provided, because TableResult may not
-   * expose them cleanly).
-   *
-   * Returns: List of RuleDefinitions.
-   *
-   * Throws: IllegalArgumentException if `field` or `check_type` columns are missing.
+   * @param result TableResult from a query.
+   * @param fieldNames The field names (must be provided, because TableResult may not expose them cleanly).
+   * @return List of RuleDefinitions.
+   * @throws java.lang.IllegalArgumentException if `field` or `check_type` columns are missing.
    */
   def fromTableResult(
       result: TableResult,

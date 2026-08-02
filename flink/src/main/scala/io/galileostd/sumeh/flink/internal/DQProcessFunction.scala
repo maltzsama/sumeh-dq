@@ -24,8 +24,9 @@ import org.apache.flink.util.{ Collector, OutputTag }
  * routes records with at least one error to the error side output. Field names come from the input `RowTypeInfo`, so
  * positional rows are supported. Evaluation is stateless — one record at a time.
  *
- * Args: rules: Rules to evaluate. fieldNames: Input field names, in positional order (from the stream's `RowTypeInfo`).
- * errorTag: Side-output tag for records with at least one error.
+ * @param rules Rules to evaluate.
+ * @param fieldNames Input field names, in positional order (from the stream's `RowTypeInfo`).
+ * @param errorTag Side-output tag for records with at least one error.
  */
 private[flink] class DQProcessFunction(
     rules: Seq[RuleDefinition],
@@ -82,7 +83,9 @@ private[flink] class DQProcessFunction(
    * error objects) and `_dq_skipped` (pipe-separated reasons). The enriched row is always emitted once on the main
    * output; records with at least one error are additionally routed to `errorTag`.
    *
-   * Args: row: The input record. ctx: The process context used to write side outputs. out: The main output collector.
+   * @param row The input record.
+   * @param ctx The process context used to write side outputs.
+   * @param out The main output collector.
    */
   override def processElement(
       row: Row,
@@ -111,6 +114,15 @@ private[flink] class DQProcessFunction(
 /**
  * One structured error entry, mirroring the Spark `_dq_errors` struct fields so a consumer can treat both engines
  * uniformly via `from_json`.
+ *
+ * @param rule_id Unique identifier tying the error back to a rule.
+ * @param check_type The rule type (e.g. `"is_complete"`).
+ * @param field Column name that failed.
+ * @param category Rule category (e.g. `"completeness"`).
+ * @param expected Expected value, if any.
+ * @param actual Actual value measured, if any.
+ * @param message Human-readable reason.
+ * @param timestamp When the error was recorded (ISO-8601 string).
  */
 final private[flink] case class DQError(
     rule_id: String,
@@ -137,11 +149,11 @@ private[flink] object DQProcessFunction {
    * whose `skipReason` yields a reason are skipped; any exception thrown while evaluating a rule is captured as an
    * ERROR entry.
    *
-   * Args: values: Field-name-to-value map of the record. rules: Rules to evaluate. patterns: Pre-compiled `has_pattern`
-   * regexes keyed by `checkType` (compiled once per operator, not per record). formats: Pre-compiled
-   * `validate_date_format` formatters keyed by format string (compiled once per operator, not per record).
-   *
-   * Returns: A tuple of structured error entries and skipped-rule reasons.
+   * @param values Field-name-to-value map of the record.
+   * @param rules Rules to evaluate.
+   * @param patterns pre-compiled `has_pattern` regexes keyed by regex string, compiled once per operator
+   * @param formats pre-compiled `validate_date_format` formatters keyed by format string, compiled once per operator
+   * @return A tuple of structured error entries and skipped-rule reasons.
    */
   private[flink] def evaluate(
       values: Map[String, Any],
@@ -177,9 +189,8 @@ private[flink] object DQProcessFunction {
    * error per record at runtime. Rules that will be skipped anyway (execute=false, wrong level, unsupported engine) are
    * not validated — there is no point failing the job over a rule that never runs.
    *
-   * Args: rules: The rules to validate.
-   *
-   * Throws: IllegalArgumentException on the first rule with a missing or wrong-typed `value`.
+   * @param rules The rules to validate.
+   * @throws java.lang.IllegalArgumentException on the first rule with a missing or wrong-typed `value`.
    */
   private[flink] def validateRules(rules: Seq[RuleDefinition]): Unit =
     rules.foreach {
@@ -213,9 +224,9 @@ private[flink] object DQProcessFunction {
    * null short-circuit, contradicting the "no silent passes" contract. The field names are known from the stream's
    * `RowTypeInfo`, so a typo is caught before the job is submitted. Rules that will be skipped anyway are not checked.
    *
-   * Args: rules: The rules to validate. fieldNames: Input field names, in positional order.
-   *
-   * Throws: IllegalArgumentException on the first rule whose field is absent from `fieldNames`.
+   * @param rules The rules to validate.
+   * @param fieldNames Input field names, in positional order.
+   * @throws java.lang.IllegalArgumentException on the first rule whose field is absent from `fieldNames`.
    */
   private[flink] def validateFields(rules: Seq[RuleDefinition], fieldNames: Array[String]): Unit =
     rules.foreach {
@@ -233,9 +244,8 @@ private[flink] object DQProcessFunction {
   /**
    * Serializes error entries as a JSON array string, matching the Spark `_dq_errors` struct fields.
    *
-   * Args: errors: The error entries for a record.
-   *
-   * Returns: A JSON array string (e.g. `[{"check_type":"is_complete",...}]`), or `[]` when empty.
+   * @param errors The error entries for a record.
+   * @return A JSON array string (e.g. `[{"check_type":"is_complete",...}]`), or `[]` when empty.
    */
   private[flink] def errorsToJson(errors: List[DQError]): String =
     ujson.write(ujson.Arr.from(errors.map(errorToJson)))
@@ -262,12 +272,12 @@ private[flink] object DQProcessFunction {
    * Null values short-circuit non-completeness checks as passing (consistent with Spark), except for completeness,
    * `is_legit` and `validate_date_format`. Unsupported check types throw.
    *
-   * Args: values: Field-name-to-value map of the record. rule: The rule to evaluate.
-   *
-   * Returns: True if the record satisfies the rule.
-   *
-   * Throws: IllegalArgumentException if the check type is not implemented for the Flink streaming engine, or if a value
-   * cannot be converted to the type the check requires.
+   * @param values Field-name-to-value map of the record.
+   * @param rule The rule to evaluate.
+   * @param patterns Pre-compiled `has_pattern` regexes keyed by regex string (compiled once per operator).
+   * @param formats pre-compiled `validate_date_format` formatters, compiled once per operator
+   * @return True if the record satisfies the rule.
+   * @throws java.lang.IllegalArgumentException if `checkType` is unknown or a value can't be coerced
    */
   private def checkRule(
       values: Map[String, Any],
@@ -393,11 +403,10 @@ private[flink] object DQProcessFunction {
   /**
    * Extracts the string value of a rule, throwing when absent.
    *
-   * Args: rule: The rule. msg: The error message when the value is missing.
-   *
-   * Returns: The `StringValue` contents.
-   *
-   * Throws: IllegalArgumentException when `value` is missing or not a string.
+   * @param rule The rule.
+   * @param msg The error message when the value is missing.
+   * @return the string extracted from the rule's `value` field
+   * @throws java.lang.IllegalArgumentException when `value` is missing or not a string.
    */
   private[flink] def requireString(rule: RuleDefinition, msg: String): String =
     rule.value
@@ -407,11 +416,10 @@ private[flink] object DQProcessFunction {
   /**
    * Extracts the list value of a rule, throwing when absent.
    *
-   * Args: rule: The rule. msg: The error message when the value is missing.
-   *
-   * Returns: The `ListValue` items.
-   *
-   * Throws: IllegalArgumentException when `value` is missing or not a list.
+   * @param rule The rule.
+   * @param msg The error message when the value is missing.
+   * @return the list extracted from the rule's `value` field
+   * @throws java.lang.IllegalArgumentException when `value` is missing or not a list.
    */
   private[flink] def requireList(rule: RuleDefinition, msg: String): List[RuleValue] =
     rule.value
@@ -421,11 +429,10 @@ private[flink] object DQProcessFunction {
   /**
    * Extracts a `(lo, hi)` pair from the rule's list value, throwing when absent.
    *
-   * Args: rule: The rule. msg: The error message when the value is absent.
-   *
-   * Returns: The two items of the `ListValue`.
-   *
-   * Throws: IllegalArgumentException when `value` is missing or is not a two-element list.
+   * @param rule The rule.
+   * @param msg The error message when the value is absent.
+   * @return a `(lo, hi)` pair extracted from a two-element [[ListValue]]
+   * @throws java.lang.IllegalArgumentException when `value` is missing or is not a two-element list.
    */
   private[flink] def requirePair(rule: RuleDefinition, msg: String): (RuleValue, RuleValue) =
     rule.value match {
@@ -436,10 +443,9 @@ private[flink] object DQProcessFunction {
   /**
    * Builds a structured error entry for a failed rule.
    *
-   * Args: rule: The failed rule. message: Optional message (a short `checkType:field` by default, or a full ERROR
-   * message when an exception was caught).
-   *
-   * Returns: A [[DQError]] mirroring the Spark `_dq_errors` struct.
+   * @param rule The failed rule.
+   * @param message a short `checkType:field` reason by default, or the full exception message when caught
+   * @return A [[DQError]] mirroring the Spark `_dq_errors` struct.
    */
   private def buildError(rule: RuleDefinition, message: Option[String] = None): DQError =
     DQError(
@@ -455,11 +461,9 @@ private[flink] object DQProcessFunction {
   /**
    * Converts a raw value to Double, throwing on incompatible types.
    *
-   * Args: v: The raw value.
-   *
-   * Returns: The value as a Double.
-   *
-   * Throws: IllegalArgumentException if `v` is neither a Number nor a String parseable as a Double.
+   * @param v The raw value.
+   * @return The value as a Double.
+   * @throws java.lang.IllegalArgumentException if `v` is neither a Number nor a String parseable as a Double.
    */
   private def toDouble(v: Any): Double = v match {
     case n: Number => n.doubleValue()
@@ -470,12 +474,9 @@ private[flink] object DQProcessFunction {
   /**
    * Converts a raw value to LocalDate, throwing on incompatible types.
    *
-   * Args: v: The raw value.
-   *
-   * Returns: The value as a LocalDate.
-   *
-   * Throws: IllegalArgumentException if `v` is neither a LocalDate, a java.sql.Date, nor a String parseable as an ISO
-   * date.
+   * @param v The raw value.
+   * @return The value as a LocalDate.
+   * @throws java.lang.IllegalArgumentException if `v` is not a `LocalDate`, `java.sql.Date`, or ISO-date string
    */
   private def toDate(v: Any): LocalDate = v match {
     case d: LocalDate     => d
@@ -487,9 +488,8 @@ private[flink] object DQProcessFunction {
   /**
    * Converts a raw value to LocalDate, returning null instead of throwing.
    *
-   * Args: v: The raw value.
-   *
-   * Returns: The value as a LocalDate, or null if it cannot be parsed.
+   * @param v The raw value.
+   * @return The value as a LocalDate, or null if it cannot be parsed.
    */
   private def safeToDate(v: Any): LocalDate =
     try toDate(v)
@@ -500,11 +500,9 @@ private[flink] object DQProcessFunction {
   /**
    * Converts a numeric RuleValue to Double, throwing on non-numeric values.
    *
-   * Args: v: The optional RuleValue (Long, Double or numeric String).
-   *
-   * Returns: The value as a Double.
-   *
-   * Throws: IllegalArgumentException if `v` is empty or not numeric.
+   * @param v The optional RuleValue (Long, Double or numeric String).
+   * @return The value as a Double.
+   * @throws java.lang.IllegalArgumentException if `v` is empty or not numeric.
    */
   private def ruleValueToDouble(v: Option[io.galileostd.sumeh.rule.RuleValue]): Double = v match {
     case Some(LongValue(l))   => l.toDouble
@@ -516,11 +514,9 @@ private[flink] object DQProcessFunction {
   /**
    * Extracts the string forms of a ListValue for membership checks.
    *
-   * Args: rule: The rule holding the membership list.
-   *
-   * Returns: A Set of the string forms of every item.
-   *
-   * Throws: IllegalArgumentException when `value` is missing or not a list.
+   * @param rule The rule holding the membership list.
+   * @return A Set of the string forms of every item.
+   * @throws java.lang.IllegalArgumentException when `value` is missing or not a list.
    */
   private def listValuesAsString(rule: RuleDefinition): Set[String] =
     requireList(rule, s"${rule.checkType} requires a list of values").map {

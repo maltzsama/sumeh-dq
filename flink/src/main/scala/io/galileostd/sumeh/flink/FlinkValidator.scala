@@ -30,13 +30,10 @@ object FlinkValidator {
    * as text. `_dq_skipped` is a `checkType:reason` string with `|` separators, matching Spark. Cross-engine sinks must
    * handle the two `_dq_errors` shapes.
    *
-   * Args: stream: The input `DataStream[Row]`, whose type must be a [[RowTypeInfo]]. rules: Rules to apply.
-   *
-   * Returns: A [[io.galileostd.sumeh.flink.validation.ValidatedFlinkStream]] whose `split()` exposes the `(good, bad)`
-   * streams.
-   *
-   * Throws: IllegalArgumentException when `stream` does not carry an explicit `RowTypeInfo` (e.g. an inferred
-   * `GenericTypeInfo[Row]`).
+   * @param stream The input `DataStream[Row]`, whose type must be a [[RowTypeInfo]].
+   * @param rules Rules to apply.
+   * @return a [[ValidatedFlinkStream]] ready for `split()` into good and bad streams
+   * @throws java.lang.IllegalArgumentException if the stream has no `RowTypeInfo` (e.g. inferred generic type)
    */
   def validate(
       stream: DataStream[Row],

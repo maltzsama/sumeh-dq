@@ -13,8 +13,8 @@ import org.apache.flink.util.OutputTag
  * Produced by [[io.galileostd.sumeh.flink.FlinkValidator]]. Provides [[split]] — bad rows come from the error side
  * output, good rows are filtered from the main output. Zero reprocessing, zero shuffle.
  *
- * Args: stream: The validated single-output stream (rows carry `_dq_errors` / `_dq_skipped` fields). errorTag:
- * Side-output tag for bad rows.
+ * @param stream The validated single-output stream (rows carry `_dq_errors` / `_dq_skipped` fields).
+ * @param errorTag Side-output tag for bad rows.
  */
 class ValidatedFlinkStream(
     private val stream: SingleOutputStreamOperator[Row],
@@ -27,7 +27,7 @@ class ValidatedFlinkStream(
    * Good rows are those whose `_dq_errors` is an empty JSON array (or null); bad rows have at least one error and come
    * from the error side output.
    *
-   * Returns: A `(good, bad)` tuple of `DataStream[Row]`.
+   * @return A `(good, bad)` tuple of `DataStream[Row]`.
    */
   def split(): (DataStream[Row], DataStream[Row]) = {
     val errorIdx = stream.getType.asInstanceOf[RowTypeInfo].getFieldIndex("_dq_errors")
@@ -43,7 +43,7 @@ class ValidatedFlinkStream(
   /**
    * The underlying single-output stream.
    *
-   * Returns: The enriched `SingleOutputStreamOperator[Row]`.
+   * @return The enriched `SingleOutputStreamOperator[Row]`.
    */
   def toNative: SingleOutputStreamOperator[Row] = stream
 }
