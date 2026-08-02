@@ -219,6 +219,15 @@ class ValidationSpec extends AnyWordSpec with Matchers {
       s("total_validations") shouldBe 3
     }
 
+    "gerar timestamps em UTC" in {
+      val antes  = java.time.LocalDateTime.now(java.time.ZoneOffset.UTC)
+      val r      = ValidationResult()
+      val depois = java.time.LocalDateTime.now(java.time.ZoneOffset.UTC)
+
+      r.timestamp.isBefore(antes.minusSeconds(2)) shouldBe false
+      r.timestamp.isAfter(depois.plusSeconds(2)) shouldBe false
+    }
+
     "preserve engine name" in {
       makeReport(engine = "spark").summary()("engine") shouldBe "spark"
     }

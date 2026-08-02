@@ -22,7 +22,7 @@ import io.galileostd.sumeh.rule.RuleValue
  */
 final case class ValidationResult(
     id: String = UUID.randomUUID().toString,
-    timestamp: LocalDateTime = LocalDateTime.now(),
+    timestamp: LocalDateTime = LocalDateTime.now(java.time.ZoneOffset.UTC),
     level: ValidationLevel = ValidationLevel.ROW,
     category: String = "unknown",
     checkType: String = "",

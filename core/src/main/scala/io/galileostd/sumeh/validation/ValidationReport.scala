@@ -22,7 +22,7 @@ final case class ValidationReport[DF](
     executionTimeMs: Double,
     engine: String,
     errorMessage: Option[String] = None,
-    timestamp: LocalDateTime = LocalDateTime.now(),
+    timestamp: LocalDateTime = LocalDateTime.now(java.time.ZoneOffset.UTC),
     dfValidated: Option[DF] = None,
     generatedSql: Option[String] = None
 ) {
