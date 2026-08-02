@@ -49,7 +49,7 @@ jobs:
 
       - name: Render README to HTML
         run: |
-          npm install -g marked
+          npm install --prefix /tmp/marked marked
           python3 - <<'PY'
           import re
           src = open('README.md', encoding='utf-8').read()
@@ -57,11 +57,11 @@ jobs:
           src = re.sub(r'<p\s+align="center">.*?</p>', '', src, count=1, flags=re.S)
           open('/tmp/readme-body.md', 'w', encoding='utf-8').write(src.lstrip('\n'))
           PY
-          marked -o site/readme-body.html /tmp/readme-body.md
+          /tmp/marked/node_modules/.bin/marked -o site/readme-body.html /tmp/readme-body.md
 
       - name: Render CHANGELOG to HTML
         run: |
-          marked -o site/changelog-body.html CHANGELOG.md
+          /tmp/marked/node_modules/.bin/marked -o site/changelog-body.html CHANGELOG.md
 
       - name: Generate landing page
         run: |
