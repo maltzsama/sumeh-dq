@@ -142,4 +142,11 @@ class SchemaModelsSpec extends AnyWordSpec with Matchers {
       SchemaReport(passed = false).toString should include("FAILED")
     }
   }
+
+  "CR-31 strict coercions" should {
+    "reject a structurally-wrong nullable in a schema map" in {
+      an[IllegalArgumentException] should be thrownBy
+      SchemaDef.fromMap(Map("id" -> Map("type" -> "integer", "nullable" -> List("true"))))
+    }
+  }
 }

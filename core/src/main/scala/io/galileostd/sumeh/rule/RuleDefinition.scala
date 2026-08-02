@@ -198,7 +198,12 @@ object RuleDefinition {
         case s: String =>
           val t = s.trim.toLowerCase
           t.isEmpty || Set("true", "1", "yes", "y", "t").contains(t)
-        case _ => true
+        case n: Number => n.doubleValue() != 0
+        case other =>
+          throw new IllegalArgumentException(
+            s"Cannot interpret '$other' (${other.getClass.getSimpleName}) as execute; " +
+              """use true/false, "true"/"false", 1/0, or yes/no"""
+          )
       }
       .getOrElse(true)
 

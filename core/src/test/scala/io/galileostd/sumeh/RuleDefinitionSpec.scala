@@ -467,4 +467,16 @@ class RuleDefinitionSpec extends AnyWordSpec with Matchers {
       rule.isApplicableForLevel("table_level") shouldBe false
     }
   }
+
+  "CR-31 strict coercions" should {
+    "accept numeric 0/1 as execute" in {
+      RuleDefinition.fromMap(Map("field" -> "x", "check_type" -> "is_complete", "execute" -> 0)).execute shouldBe false
+      RuleDefinition.fromMap(Map("field" -> "x", "check_type" -> "is_complete", "execute" -> 1)).execute shouldBe true
+    }
+
+    "reject a structurally-wrong execute" in {
+      an[IllegalArgumentException] should be thrownBy
+      RuleDefinition.fromMap(Map("field" -> "x", "check_type" -> "is_complete", "execute" -> List("yes")))
+    }
+  }
 }
