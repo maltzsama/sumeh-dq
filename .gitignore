@@ -183,3 +183,5 @@ docs/api/flink/
 
 tmp/
 dump.sh
+
+node_modules/
