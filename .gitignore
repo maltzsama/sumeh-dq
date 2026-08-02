@@ -168,3 +168,20 @@ TempStatsStore/
 .env
 .env.local
 .env.*.local
+
+# ===============================
+# Documentation site
+# ===============================
+
+# MkDocs / doc site build output
+site/
+
+# Generated scaladoc (sbt doc output)
+docs/api/core/
+docs/api/spark/
+docs/api/flink/
+
+tmp/
+dump.sh
+
+node_modules/
