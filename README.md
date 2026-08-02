@@ -314,7 +314,7 @@ Run it as a rule too: `RuleDefinition.validated(Left("_schema"), "validate_schem
 
 ## Data Profiling
 
-Get column-level statistics without writing any validation rules — a single pass, reusing the same analyzers as validation.
+Get column-level statistics without writing any validation rules — every column and statistic is computed in a single aggregation, independent of table width.
 
 ```scala
 import io.galileostd.sumeh.spark.SparkProfiler
