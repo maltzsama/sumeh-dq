@@ -182,3 +182,4 @@ docs/api/spark/
 docs/api/flink/
 
 tmp/
+dump.sh
