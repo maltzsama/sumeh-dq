@@ -252,6 +252,7 @@ object SchemaConstraint extends SparkConstraint {
       level = ValidationLevel.TABLE,
       category = rule.category,
       status = if (passed) ValidationStatus.PASS else ValidationStatus.FAIL,
+      // expectedValue is deliberately None: rule.value is a serialised JSON schema, not a numeric threshold.
       actualValue = Some(metric.value),
       message =
         if (passed) None

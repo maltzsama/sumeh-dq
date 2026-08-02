@@ -563,6 +563,6 @@ object SparkValidator {
       level = ValidationLevel.ROW,
       category = rule.category,
       status = ValidationStatus.PASS,
-      message = Some("Rule applied to the stream; pass rate is not computable in streaming")
+      metadata = Map("note" -> "pass rate is not computable in streaming")
     )
 }
