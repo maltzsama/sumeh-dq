@@ -20,9 +20,10 @@ object RuleLoader {
   /**
    * Parses rules from a CSV string.
    *
-   * Expects a header row with the columns `field,check_type,value,threshold,execute,level,category`. Each subsequent
-   * non-empty line becomes one rule via [[io.galileostd.sumeh.rule.RuleDefinition.fromMap]]; `value` may use the
-   * lossless tagged format (e.g. `LongValue(42)`) from [[toCsv]].
+   * Expects a header row with the columns `field,check_type,value,threshold,tolerance,execute,level,category`. Each
+   * subsequent non-empty line becomes one rule via [[io.galileostd.sumeh.rule.RuleDefinition.fromMap]]; `value` may use
+   * the lossless tagged format (e.g. `LongValue(42)`) from [[toCsv]]. Missing columns — including a CSV written before
+   * `tolerance` existed — fall back to `RuleDefinition`'s defaults.
    *
    * Args: csv: The raw CSV text, with or without a trailing newline.
    *
