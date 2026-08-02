@@ -1032,6 +1032,25 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       good.count() shouldBe 4
       bad.count() shouldBe 1
     }
+
+    "treat a null _dq_errors as good instead of dropping the row" in {
+      val df = spark.createDataFrame(
+        spark.sparkContext.parallelize(Seq(Row(1, null), Row(2, null))),
+        StructType(
+          Seq(
+            StructField("id", IntegerType, nullable = true),
+            StructField(
+              "_dq_errors",
+              ArrayType(StructType(Seq(StructField("x", StringType, nullable = true)))),
+              nullable = true
+            )
+          )
+        )
+      )
+      val (good, bad) = new io.galileostd.sumeh.spark.ValidatedSparkDataFrame(df).splitByErrors()
+      bad.count() shouldBe 0
+      good.count() shouldBe 2
+    }
   }
 
   // -------------------------------------------------------------------------

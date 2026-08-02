@@ -41,7 +41,7 @@ class ValidatedSparkDataFrame(private val df: DataFrame) {
    */
   def splitByErrors(errorColumn: String = "_dq_errors"): (DataFrame, DataFrame) = {
     require(df.columns.contains(errorColumn), s"Column '$errorColumn' not found")
-    val hasErrors = F.size(F.col(errorColumn)) > 0
+    val hasErrors = F.coalesce(F.size(F.col(errorColumn)), F.lit(0)) > 0
     val good      = df.filter(!hasErrors).drop(errorColumn)
     val bad       = df.filter(hasErrors)
     (good, bad)
