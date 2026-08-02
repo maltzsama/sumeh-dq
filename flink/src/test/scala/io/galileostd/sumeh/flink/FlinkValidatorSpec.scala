@@ -211,6 +211,25 @@ class FlinkValidatorSpec extends AnyWordSpec with Matchers {
       )
     }
 
+    "reject a stream that already carries a reserved DQ field name" in {
+      val reservedType = new RowTypeInfo(
+        Array[TypeInformation[_]](Types.INT, Types.STRING),
+        Array[String]("id", "_dq_errors")
+      )
+      val env = StreamExecutionEnvironment.getExecutionEnvironment
+      env.setParallelism(1)
+      val stream = env.fromCollection(
+        java.util.Arrays.asList { val r = new Row(2); r.setField(0, Int.box(1)); r.setField(1, "{}"); r },
+        reservedType
+      )
+
+      val ex = the[IllegalArgumentException] thrownBy FlinkValidator.validate(
+        stream,
+        Seq(RuleDefinition.validated(Left("id"), "is_complete"))
+      )
+      ex.getMessage should include("_dq_errors")
+    }
+
     "throw at job construction when is_between has no list value" in {
       val stream = streamOf(positionalRow(1, "alice", 30))
       val bad    = RuleDefinition.validated(Left("age"), "is_between")

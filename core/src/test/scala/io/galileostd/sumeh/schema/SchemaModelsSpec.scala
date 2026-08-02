@@ -61,6 +61,34 @@ class SchemaModelsSpec extends AnyWordSpec with Matchers {
       col.fields.get.find(_.name == "zip").get.expectedType shouldBe "integer"
     }
 
+    "parse nested fields given as a list of field objects" in {
+      val col = ColumnDef.fromMap(
+        "address",
+        Map(
+          "type" -> "struct",
+          "fields" -> List(
+            Map("name" -> "street", "type" -> "string"),
+            Map("name" -> "zip", "type"    -> "integer")
+          )
+        )
+      )
+      col.fields shouldBe defined
+      col.fields.get should have size 2
+      col.fields.get.find(_.name == "zip").get.expectedType shouldBe "integer"
+    }
+
+    "yield no nested fields for an unrecognized fields shape" in {
+      val col = ColumnDef.fromMap("address", Map("type" -> "struct", "fields" -> 42))
+      col.fields shouldBe None
+    }
+
+    "throw a clear message for a list entry without a name" in {
+      an[IllegalArgumentException] should be thrownBy ColumnDef.fromMap(
+        "address",
+        Map("type" -> "struct", "fields" -> List(Map("type" -> "string")))
+      )
+    }
+
     "default to string for unknown payloads" in {
       val col = ColumnDef.fromMap("x", 42)
       col.expectedType shouldBe "string"

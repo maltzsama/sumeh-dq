@@ -58,6 +58,13 @@ object FlinkValidator {
     DQProcessFunction.validateRules(rules)
     DQProcessFunction.validateFields(rules, fieldNames)
 
+    val reserved = List("_dq_errors", "_dq_skipped").filter(fieldNames.contains)
+    if (reserved.nonEmpty)
+      throw new IllegalArgumentException(
+        s"Input stream already carries reserved DQ field name(s): ${reserved.mkString(", ")}. " +
+          "Rename these columns before validating."
+      )
+
     val outType = new RowTypeInfo(
       fieldTypes :+ Types.STRING :+ Types.STRING,
       fieldNames :+ "_dq_errors" :+ "_dq_skipped"

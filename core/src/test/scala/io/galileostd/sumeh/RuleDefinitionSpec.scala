@@ -128,6 +128,22 @@ class RuleDefinitionSpec extends AnyWordSpec with Matchers {
       result shouldBe defined
       result.get shouldBe a[ListValue]
     }
+
+    "round-trip a nested ListValue with commas intact" in {
+      val nested = ListValue(List(ListValue(List(LongValue(1), LongValue(2))), StringValue("x")))
+      RuleDefinition.parseValue(nested.toTaggedString) shouldBe Some(nested)
+    }
+
+    "round-trip a StringValue containing a comma" in {
+      val value = ListValue(List(StringValue("a,b"), StringValue("c")))
+      RuleDefinition.parseValue(value.toTaggedString) shouldBe Some(value)
+    }
+
+    "throw a clear message for a malformed tagged value" in {
+      an[SumehException] should be thrownBy RuleDefinition.parseValue("LongValue(abc)")
+      an[SumehException] should be thrownBy RuleDefinition.parseValue("DateValue(not-a-date)")
+      an[SumehException] should be thrownBy RuleDefinition.parseValue("ListValue(18)")
+    }
   }
 
   "RuleDefinition.fromMap" should {
@@ -196,6 +212,30 @@ class RuleDefinitionSpec extends AnyWordSpec with Matchers {
         RuleDefinition.fromMap(Map("field" -> "email"))
       }
     }
+
+    "preserve a user-supplied level and category" in {
+      val rule = RuleDefinition.fromMap(
+        Map(
+          "field"      -> "email",
+          "check_type" -> "is_complete",
+          "level"      -> "ROW",
+          "category"   -> "my_category"
+        )
+      )
+      rule.level shouldBe "ROW"
+      rule.category shouldBe "my_category"
+    }
+
+    "normalize a user-supplied level" in {
+      val rule = RuleDefinition.fromMap(
+        Map(
+          "field"      -> "email",
+          "check_type" -> "is_complete",
+          "level"      -> "row_level"
+        )
+      )
+      rule.level shouldBe "ROW"
+    }
   }
 
   "RuleDefinition" should {
@@ -258,6 +298,31 @@ class RuleDefinitionSpec extends AnyWordSpec with Matchers {
       back.head.value shouldBe rule.value
       back.head.threshold shouldBe rule.threshold
       back.head.checkType shouldBe rule.checkType
+    }
+
+    "round-trip a nested list and comma-bearing values through CSV losslessly" in {
+      val rule = RuleDefinition.validated(
+        Left("status"),
+        "is_contained_in",
+        value = Some(ListValue(List(ListValue(List(LongValue(1), LongValue(2))), StringValue("a,b"))))
+      )
+      val back = RuleLoader.fromCsvString(RuleLoader.toCsv(List(rule)))
+      back should have size 1
+      back.head.value shouldBe rule.value
+    }
+
+    "preserve a user-supplied level and category through CSV" in {
+      val rule = RuleDefinition.validated(
+        Left("age"),
+        "has_mean",
+        value = Some(DoubleValue(10.0)),
+        level = Some("TABLE"),
+        category = Some("my_category")
+      )
+      val back = RuleLoader.fromCsvString(RuleLoader.toCsv(List(rule)))
+      back should have size 1
+      back.head.level shouldBe "TABLE"
+      back.head.category shouldBe "my_category"
     }
 
     "round-trip values through JSON losslessly" in {

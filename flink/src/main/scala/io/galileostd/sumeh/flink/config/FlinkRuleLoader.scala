@@ -74,6 +74,12 @@ object FlinkRuleLoader {
       column: String = "config",
       tableEnv: TableEnvironment
   ): List[RuleDefinition] = {
+    val columns = table.getResolvedSchema.getColumnNames.asScala.toSet
+    require(
+      columns.contains(column),
+      s"Column '$column' not found in table schema: ${columns.toList.sorted.mkString(", ")}"
+    )
+
     val viewName = s"dq_rules_${System.nanoTime()}"
     tableEnv.createTemporaryView(viewName, table)
 

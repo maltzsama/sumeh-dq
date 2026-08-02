@@ -117,9 +117,11 @@ object RuleDefinition {
    * Args: field: The column name(s) — `Left` for one, `Right` for several. checkType: The rule type; must exist in the
    * registry. value: Threshold or comparison value for the rule. threshold: Pass-rate threshold in `[0.0, 1.0]`.
    * tolerance: Relative tolerance for TABLE-level aggregation rules; default `1e-9`, `0.0` for exact match. execute:
-   * `false` to disable the rule. updatedAt: Rule update timestamp. metadata: Extra keys to preserve.
+   * `false` to disable the rule. level: Optional user-supplied level overriding the registry default (e.g. when loading
+   * a rule from config). category: Optional user-supplied category overriding the registry default. updatedAt: Rule
+   * update timestamp. metadata: Extra keys to preserve.
    *
-   * Returns: A rule with `level`/`category` populated from the registry.
+   * Returns: A rule with `level`/`category` populated from the registry (or the supplied overrides).
    *
    * Throws: [[io.galileostd.sumeh.exception.SumehException]] when `checkType` is not registered.
    */
@@ -130,6 +132,8 @@ object RuleDefinition {
       threshold: Double = 1.0,
       tolerance: Double = 1e-9,
       execute: Boolean = true,
+      level: Option[String] = None,
+      category: Option[String] = None,
       updatedAt: Option[LocalDateTime] = None,
       metadata: Map[String, Any] = Map.empty
   ): RuleDefinition = {
@@ -149,8 +153,8 @@ object RuleDefinition {
       threshold = threshold,
       tolerance = tolerance,
       execute = execute,
-      level = entry.level,
-      category = entry.category,
+      level = level.getOrElse(entry.level),
+      category = category.getOrElse(entry.category),
       updatedAt = updatedAt,
       metadata = metadata
     )
@@ -205,6 +209,14 @@ object RuleDefinition {
 
     val updatedAt = data.get("updated_at").flatMap(parseTimestamp)
 
+    val level = data
+      .get("level")
+      .map(_.toString)
+      .map(_.trim.toUpperCase.replace("_LEVEL", ""))
+      .filter(_.nonEmpty)
+
+    val category = data.get("category").map(_.toString).map(_.trim).filter(_.nonEmpty)
+
     val metadata = data.filterNot { case (k, _) => knownFields.contains(k) }
 
     val checkType = data
@@ -219,6 +231,8 @@ object RuleDefinition {
       threshold = threshold,
       tolerance = tolerance,
       execute = execute,
+      level = level,
+      category = category,
       updatedAt = updatedAt,
       metadata = metadata
     )
@@ -250,7 +264,7 @@ object RuleDefinition {
       if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
         val inner = trimmed.drop(1).dropRight(1).trim
         val cols =
-          inner.split(",").map(_.trim.stripPrefix("\"").stripSuffix("\"").stripPrefix("'").stripSuffix("'")).toList
+          splitTopLevel(inner).map(_.trim.stripPrefix("\"").stripSuffix("\"").stripPrefix("'").stripSuffix("'")).toList
         if (cols.size > 1) Right(cols) else Left(cols.headOption.getOrElse(""))
       } else if (trimmed.contains(",")) {
         val cols = trimmed.split(",").map(_.trim).toList
@@ -288,22 +302,41 @@ object RuleDefinition {
     case s: String if s.startsWith("StringValue(") && s.endsWith(")") =>
       Some(StringValue(s.stripPrefix("StringValue(").stripSuffix(")")))
     case s: String if s.startsWith("LongValue(") && s.endsWith(")") =>
-      parseValue(s.stripPrefix("LongValue(").stripSuffix(")")).collect { case l: LongValue => l }
+      parseValue(s.stripPrefix("LongValue(").stripSuffix(")")) match {
+        case Some(l: LongValue) => Some(l)
+        case _                  => throw new SumehException(s"Malformed tagged rule value: '$s'")
+      }
     case s: String if s.startsWith("DoubleValue(") && s.endsWith(")") =>
-      parseValue(s.stripPrefix("DoubleValue(").stripSuffix(")")).collect { case d: DoubleValue => d }
+      parseValue(s.stripPrefix("DoubleValue(").stripSuffix(")")) match {
+        case Some(d: DoubleValue) => Some(d)
+        case _                    => throw new SumehException(s"Malformed tagged rule value: '$s'")
+      }
     case s: String if s.startsWith("BoolValue(") && s.endsWith(")") =>
-      parseValue(s.stripPrefix("BoolValue(").stripSuffix(")")).collect { case b: BoolValue => b }
+      parseValue(s.stripPrefix("BoolValue(").stripSuffix(")")) match {
+        case Some(b: BoolValue) => Some(b)
+        case _                  => throw new SumehException(s"Malformed tagged rule value: '$s'")
+      }
     case s: String if s.startsWith("DateValue(") && s.endsWith(")") =>
-      parseValue(s.stripPrefix("DateValue(").stripSuffix(")")).collect { case d: DateValue => d }
+      parseValue(s.stripPrefix("DateValue(").stripSuffix(")")) match {
+        case Some(d: DateValue) => Some(d)
+        case _                  => throw new SumehException(s"Malformed tagged rule value: '$s'")
+      }
     case s: String if s.startsWith("DateTimeValue(") && s.endsWith(")") =>
-      parseValue(s.stripPrefix("DateTimeValue(").stripSuffix(")")).collect { case dt: DateTimeValue => dt }
+      parseValue(s.stripPrefix("DateTimeValue(").stripSuffix(")")) match {
+        case Some(dt: DateTimeValue) => Some(dt)
+        case _                       => throw new SumehException(s"Malformed tagged rule value: '$s'")
+      }
     case s: String if s.startsWith("ListValue(") && s.endsWith(")") =>
-      parseValue(s.stripPrefix("ListValue(").stripSuffix(")"))
+      parseValue(s.stripPrefix("ListValue(").stripSuffix(")")) match {
+        case Some(l: ListValue) => Some(l)
+        case _                  => throw new SumehException(s"Malformed tagged rule value: '$s'")
+      }
     case s: String =>
       val trimmed = s.trim
       if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
         val inner = trimmed.drop(1).dropRight(1)
-        val items = inner.split(",").map(_.trim.stripPrefix("\"").stripSuffix("\"")).toList
+        val items = splitTopLevel(inner)
+          .map(_.trim.stripPrefix("\"").stripSuffix("\"").stripPrefix("'").stripSuffix("'"))
         Some(ListValue(items.flatMap(v => parseValue(v))))
       } else {
         Try(LocalDate.parse(trimmed))
@@ -339,6 +372,35 @@ object RuleDefinition {
     case dt: LocalDateTime => Some(dt)
     case s: String         => Try(LocalDateTime.parse(s)).toOption
     case _                 => None
+  }
+
+  /**
+   * Splits a string on commas at nesting depth zero.
+   *
+   * Commas inside `[...]`, `(...)`, or quoted sections are left intact, so a nested `ListValue([...])` or a
+   * `StringValue` containing a comma survives as a single element instead of being mis-split.
+   *
+   * Args: s: The string to split.
+   *
+   * Returns: The top-level comma-separated elements.
+   */
+  private def splitTopLevel(s: String): List[String] = {
+    val out   = scala.collection.mutable.ListBuffer[String]()
+    val buf   = new StringBuilder
+    var depth = 0
+    var quote = '\u0000'
+    s.foreach {
+      case c if quote != '\u0000' =>
+        if (c == quote) quote = '\u0000'
+        buf += c
+      case c @ ('"' | '\'')  => quote = c; buf += c
+      case c @ ('[' | '(')   => depth += 1; buf += c
+      case c @ (']' | ')')   => depth -= 1; buf += c
+      case ',' if depth == 0 => out += buf.toString; buf.clear()
+      case c                 => buf += c
+    }
+    if (buf.nonEmpty) out += buf.toString
+    out.toList
   }
 }
 

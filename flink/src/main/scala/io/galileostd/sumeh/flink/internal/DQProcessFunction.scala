@@ -2,6 +2,7 @@ package io.galileostd.sumeh.flink.internal
 
 import java.time.format.DateTimeFormatter
 import java.time.LocalDate
+import java.util.Locale
 
 import io.galileostd.sumeh.rule.{
   DoubleValue,
@@ -54,6 +55,27 @@ private[flink] class DQProcessFunction(
       .toMap
 
   /**
+   * Pre-compiled formatters for every `validate_date_format` rule, keyed by the format string.
+   *
+   * Compiled eagerly once per operator (not per record) with an explicit `Locale.ROOT`, so patterns with text fields
+   * (e.g. `MMM`, `EEE`) parse identically on every TaskManager instead of following each JVM's default locale.
+   */
+  private val dateFormatCache: Map[String, DateTimeFormatter] =
+    rules
+      .filter(
+        r =>
+          RuleRegistry.canonical(r.checkType) == "validate_date_format" &&
+            r.isApplicableForLevel("ROW") &&
+            r.skipReason("ROW", "flink-streaming").isEmpty
+      )
+      .map {
+        r =>
+          val format = DQProcessFunction.requireString(r, "validate_date_format requires a format string as value")
+          format -> DateTimeFormatter.ofPattern(format, Locale.ROOT)
+      }
+      .toMap
+
+  /**
    * Evaluates one record and emits the enriched row.
    *
    * The record's fields are copied by position into a widened row and augmented with `_dq_errors` (a JSON array of
@@ -70,7 +92,7 @@ private[flink] class DQProcessFunction(
 
     val values = fieldNames.indices.map(i => fieldNames(i) -> row.getField(i)).toMap
 
-    val (errors, skipped) = DQProcessFunction.evaluate(values, rules, patternCache)
+    val (errors, skipped) = DQProcessFunction.evaluate(values, rules, patternCache, dateFormatCache)
 
     val enriched = new Row(fieldNames.length + 2)
     var i        = 0
@@ -116,14 +138,16 @@ private[flink] object DQProcessFunction {
    * ERROR entry.
    *
    * Args: values: Field-name-to-value map of the record. rules: Rules to evaluate. patterns: Pre-compiled `has_pattern`
-   * regexes keyed by `checkType` (compiled once per operator, not per record).
+   * regexes keyed by `checkType` (compiled once per operator, not per record). formats: Pre-compiled
+   * `validate_date_format` formatters keyed by format string (compiled once per operator, not per record).
    *
    * Returns: A tuple of structured error entries and skipped-rule reasons.
    */
   private[flink] def evaluate(
       values: Map[String, Any],
       rules: Seq[RuleDefinition],
-      patterns: Map[String, java.util.regex.Pattern] = Map.empty
+      patterns: Map[String, java.util.regex.Pattern] = Map.empty,
+      formats: Map[String, DateTimeFormatter] = Map.empty
   ): (List[DQError], List[String]) = {
     val errors  = scala.collection.mutable.ListBuffer[DQError]()
     val skipped = scala.collection.mutable.ListBuffer[String]()
@@ -136,7 +160,7 @@ private[flink] object DQProcessFunction {
           case Some(reason) => skipped += s"${rule.checkType}:$reason"
           case None =>
             try
-              if (!checkRule(values, rule, patterns)) errors += buildError(rule)
+              if (!checkRule(values, rule, patterns, formats)) errors += buildError(rule)
             catch {
               case e: Exception => errors += buildError(rule, Some(s"ERROR[${rule.checkType}]: ${e.getMessage}"))
             }
@@ -248,7 +272,8 @@ private[flink] object DQProcessFunction {
   private def checkRule(
       values: Map[String, Any],
       rule: RuleDefinition,
-      patterns: Map[String, java.util.regex.Pattern] = Map.empty
+      patterns: Map[String, java.util.regex.Pattern] = Map.empty,
+      formats: Map[String, DateTimeFormatter] = Map.empty
   ): Boolean = {
     val field     = rule.field.fold(identity, _.head)
     val rawValue  = values.getOrElse(field, null)
@@ -350,9 +375,10 @@ private[flink] object DQProcessFunction {
       case "validate_date_format" =>
         if (rawValue == null) true
         else {
-          val format = requireString(rule, "validate_date_format requires a format string as value")
+          val format    = requireString(rule, "validate_date_format requires a format string as value")
+          val formatter = formats.getOrElse(format, DateTimeFormatter.ofPattern(format, Locale.ROOT))
           try {
-            LocalDate.parse(rawValue.toString, DateTimeFormatter.ofPattern(format))
+            LocalDate.parse(rawValue.toString, formatter)
             true
           } catch {
             case _: Exception => false

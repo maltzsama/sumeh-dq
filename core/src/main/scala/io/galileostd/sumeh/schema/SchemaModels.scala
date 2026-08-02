@@ -42,12 +42,8 @@ object ColumnDef {
   def fromMap(name: String, props: Any): ColumnDef = props match {
     case s: String => ColumnDef(name = name, expectedType = s)
     case m: Map[_, _] =>
-      val map = m.asInstanceOf[Map[String, Any]]
-      val nested = map.get("fields").map {
-        case f: Map[_, _] =>
-          f.asInstanceOf[Map[String, Any]].map { case (k, v) => fromMap(k.toString, v) }.toList
-        case _ => List.empty
-      }
+      val map    = m.asInstanceOf[Map[String, Any]]
+      val nested = map.get("fields").flatMap(parseFields)
       ColumnDef(
         name = name,
         expectedType = map.getOrElse("type", "string").toString,
@@ -59,6 +55,38 @@ object ColumnDef {
         fields = nested
       )
     case _ => ColumnDef(name = name, expectedType = "string")
+  }
+
+  /**
+   * Parses a nested `fields` payload into column definitions.
+   *
+   * Accepts either a name-keyed map (e.g. `Map("street" -> "string")`) or a list of field objects, each carrying a
+   * `name` key alongside its type contract (e.g. `List(Map("name" -> "street", "type" -> "string"))`). Any other shape
+   * yields `None`, so the caller treats it as "no nested fields declared" rather than an empty-but-present list.
+   *
+   * Args: payload: The raw `fields` value.
+   *
+   * Returns: The parsed nested columns, or `None` for an unrecognized shape.
+   *
+   * Throws: IllegalArgumentException if a list entry is not a map with a usable `name`.
+   */
+  private def parseFields(payload: Any): Option[List[ColumnDef]] = payload match {
+    case f: Map[_, _] =>
+      Some(f.asInstanceOf[Map[String, Any]].map { case (k, v) => fromMap(k.toString, v) }.toList)
+    case f: Seq[_] =>
+      Some(
+        f.toList.map {
+          case item: Map[_, _] =>
+            val m    = item.asInstanceOf[Map[String, Any]]
+            val name = m.getOrElse("name", "").toString.trim
+            if (name.isEmpty)
+              throw new IllegalArgumentException("Invalid nested field entry: missing 'name'")
+            fromMap(name, m - "name")
+          case other =>
+            throw new IllegalArgumentException(s"Invalid nested field entry: $other")
+        }
+      )
+    case _ => None
   }
 
   /**
