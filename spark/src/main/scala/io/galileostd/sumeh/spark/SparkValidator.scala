@@ -150,7 +150,7 @@ object SparkValidator {
    *
    * @param df The DataFrame to validate.
    * @param rules The rules to run.
-   * @return a [[ValidationReport]] whose `dataframe` field holds the annotated DataFrame
+   * @return a [[ValidationReport]] whose `dfValidated` field holds the annotated DataFrame
    */
   private def validateBatch(
       df: DataFrame,

@@ -23,7 +23,7 @@ trait SparkConstraint {
    *
    * @param metric The computed metric.
    * @param rule The rule with its threshold/value.
-   * @return pass or fail; `passRate` holds the percentage of rows that passed
+   * @return pass or fail; `passRate` holds the fraction of rows that passed, in `[0.0, 1.0]`
    */
   def check(metric: MetricResult, rule: RuleDefinition): ValidationResult
 

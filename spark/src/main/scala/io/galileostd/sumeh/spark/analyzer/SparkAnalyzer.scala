@@ -639,7 +639,9 @@ object AggregationAnalyzer extends SparkAnalyzer {
    * Computes the requested aggregation of the rule's field.
    *
    * @param df The DataFrame.
-   * @param rule A rule with a numeric field and one of the supported aggregation `check_type`s.
+   * @param rule A rule with one of the supported aggregation `check_type`s. Numeric aggregations (`has_min`, `has_max`,
+   *             `has_sum`, `has_mean`, `has_std`) require a numeric field; `has_cardinality`, `has_entropy`, and
+   *             `has_infogain` work on any field type.
    * @return A metric whose `value` is the aggregated number; `metadata` holds `metric` and `value`.
    * @throws java.lang.IllegalArgumentException when the field is missing or the `check_type` is unknown.
    */

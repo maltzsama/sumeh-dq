@@ -27,12 +27,16 @@ ThisBuild / versionScheme := Some("early-semver")
 
 def docOptions(moduleTitle: String) = Def.setting {
   Seq(
-    "-doc-title", moduleTitle,
-    "-doc-version", version.value,
-    "-doc-footer", "© 2026 GalileoStd.io · Apache 2.0",
+    "-doc-title",
+    moduleTitle,
+    "-doc-version",
+    version.value,
+    "-doc-footer",
+    "© 2026 GalileoStd.io · Apache 2.0",
     "-implicits",
     "-groups",
-    "-sourcepath", (ThisBuild / baseDirectory).value.getAbsolutePath,
+    "-sourcepath",
+    (ThisBuild / baseDirectory).value.getAbsolutePath,
     "-doc-source-url",
     s"https://github.com/maltzsama/sumeh-dq/tree/main/€{FILE_PATH_EXT}#L€{FILE_LINE}"
   )
@@ -95,8 +99,8 @@ lazy val core = (project in file("core"))
       "com.lihaoyi"   %% "upickle"   % "4.4.3",
       "org.scalatest" %% "scalatest" % scalatestVersion % Test
     ),
-    publish / skip                    := publishSkip.value,
-    publishLocal / skip               := false,
+    publish / skip      := publishSkip.value,
+    publishLocal / skip := false,
     Compile / doc / scalacOptions ++= docOptions("Sumeh Core").value
   )
 

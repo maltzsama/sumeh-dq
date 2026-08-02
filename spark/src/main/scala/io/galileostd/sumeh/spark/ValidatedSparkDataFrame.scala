@@ -82,7 +82,7 @@ object ValidatedSparkDataFrame {
   /**
    * Implicit `Splittable` instance so `report.split` works on the validated wrapper.
    *
-   * @return a pair of [[ValidatedSparkDataFrame]]s — good and bad, ready for further processing
+   * @return the implicit `Splittable[ValidatedSparkDataFrame]` instance provided by this companion
    */
   implicit val splittable: Splittable[ValidatedSparkDataFrame] =
     new Splittable[ValidatedSparkDataFrame] {
@@ -90,7 +90,10 @@ object ValidatedSparkDataFrame {
       /**
        * Splits via [[splitByErrors]] and re-wraps both sides.
        *
-       * @return a `(good, bad)` pair of [[ValidatedSparkDataFrame]]s, both retaining the error column
+       * `splitByErrors` removes `_dq_errors` from the good DataFrame; the bad side keeps the error column so you can
+       * see which rule failed and why.
+       *
+       * @return a `(good, bad)` pair of [[ValidatedSparkDataFrame]]s, both re-wrapped in this wrapper
        */
       def split(df: ValidatedSparkDataFrame): (ValidatedSparkDataFrame, ValidatedSparkDataFrame) = {
         val (good, bad) = df.splitByErrors()

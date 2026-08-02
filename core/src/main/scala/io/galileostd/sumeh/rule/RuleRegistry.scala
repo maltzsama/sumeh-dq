@@ -201,8 +201,8 @@ object RuleRegistry {
    * Engines dispatch on the canonical name while still reporting the original `checkType` to the user, so an alias is
    * never missed by one engine and implemented by another.
    *
-   * @param checkType the canonical rule name after resolving any alias
-   * @return The canonical `checkType`, or the input when it is not an alias.
+   * @param checkType the original rule name before alias resolution
+   * @return The canonical rule name, or the input unchanged when no alias exists.
    */
   def canonical(checkType: String): String =
     manifest.get(checkType).flatMap(_.aliasOf).getOrElse(checkType)

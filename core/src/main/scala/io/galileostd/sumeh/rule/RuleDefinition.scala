@@ -447,7 +447,7 @@ final case class StringValue(v: String) extends RuleValue {
   /**
    * Serializes as `StringValue(<v>)`.
    *
-   * @return the value wrapped in its constructor name, e.g. LongValue(42)
+   * @return the value wrapped in its constructor name, e.g. StringValue(ab)
    */
   def toTaggedString: String = s"StringValue($v)"
 }
@@ -477,7 +477,7 @@ final case class DoubleValue(v: Double) extends RuleValue {
   /**
    * Serializes as `DoubleValue(<v>)`.
    *
-   * @return the value wrapped in its constructor name, e.g. LongValue(42)
+   * @return the value wrapped in its constructor name, e.g. DoubleValue(0.5)
    */
   def toTaggedString: String = s"DoubleValue($v)"
 }
@@ -492,7 +492,7 @@ final case class BoolValue(v: Boolean) extends RuleValue {
   /**
    * Serializes as `BoolValue(<v>)`.
    *
-   * @return the value wrapped in its constructor name, e.g. LongValue(42)
+   * @return the value wrapped in its constructor name, e.g. BoolValue(true)
    */
   def toTaggedString: String = s"BoolValue($v)"
 }
@@ -505,7 +505,7 @@ final case class DateValue(v: LocalDate) extends RuleValue {
   /**
    * Serializes as `DateValue(<v>)`.
    *
-   * @return the value wrapped in its constructor name, e.g. LongValue(42)
+   * @return the value wrapped in its constructor name, e.g. DateValue(2024-01-01)
    */
   def toTaggedString: String = s"DateValue($v)"
 }
@@ -518,7 +518,7 @@ final case class DateTimeValue(v: LocalDateTime) extends RuleValue {
   /**
    * Serializes as `DateTimeValue(<v>)`.
    *
-   * @return the value wrapped in its constructor name, e.g. LongValue(42)
+   * @return the value wrapped in its constructor name, e.g. DateTimeValue(2024-01-01T12:00)
    */
   def toTaggedString: String = s"DateTimeValue($v)"
 }
@@ -533,7 +533,7 @@ final case class ListValue(v: List[RuleValue]) extends RuleValue {
   /**
    * Serializes as `ListValue([<v1>,<v2>,...])`, tagging each element recursively.
    *
-   * @return the value wrapped in its constructor name, e.g. LongValue(42)
+   * @return the value wrapped in its constructor name, e.g. ListValue([LongValue(1),StringValue(a)])
    */
   def toTaggedString: String = s"ListValue([${v.map(_.toTaggedString).mkString(",")}])"
 }

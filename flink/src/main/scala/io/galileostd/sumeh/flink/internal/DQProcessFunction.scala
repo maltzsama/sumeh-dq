@@ -151,7 +151,7 @@ private[flink] object DQProcessFunction {
    *
    * @param values Field-name-to-value map of the record.
    * @param rules Rules to evaluate.
-   * @param patterns pre-compiled `has_pattern` regexes keyed by `checkType`, compiled once per operator
+   * @param patterns pre-compiled `has_pattern` regexes keyed by regex string, compiled once per operator
    * @param formats pre-compiled `validate_date_format` formatters keyed by format string, compiled once per operator
    * @return A tuple of structured error entries and skipped-rule reasons.
    */
@@ -274,7 +274,7 @@ private[flink] object DQProcessFunction {
    *
    * @param values Field-name-to-value map of the record.
    * @param rule The rule to evaluate.
-   * @param patterns Pre-compiled `has_pattern` regexes keyed by `checkType` (compiled once per operator).
+   * @param patterns Pre-compiled `has_pattern` regexes keyed by regex string (compiled once per operator).
    * @param formats pre-compiled `validate_date_format` formatters, compiled once per operator
    * @return True if the record satisfies the rule.
    * @throws java.lang.IllegalArgumentException if `checkType` is unknown or a value can't be coerced

@@ -24,12 +24,12 @@ object SparkProfiler {
   /**
    * Statistics for a single column.
    *
-   * @param `type` Canonical column type.
+   * @param `type` The stored `field.dataType.typeName` value.
    * @param nullable Whether the column allows nulls.
    * @param rowCount Total rows profiled.
    * @param completeness Fraction of non-null values in `[0.0, 1.0]`.
    * @param distinctCount Number of distinct values.
-   * @param nullCount Estimated number of nulls (`round(rowCount * (1 - completeness))`).
+   * @param nullCount Exact null-count aggregation returned by `statLong`.
    * @param uniqueness `distinctCount / rowCount`.
    * @param min Numeric minimum (None for non-numeric columns).
    * @param max Numeric maximum.

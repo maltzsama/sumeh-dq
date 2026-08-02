@@ -17,7 +17,7 @@ import java.util.UUID
  * @param checkType The rule type (e.g. `"is_complete"`).
  * @param field Column name(s) validated.
  * @param status PASS, FAIL, ERROR, or SKIPPED.
- * @param passRate Percentage of rows that passed (row-level rules only).
+ *  @param passRate Fraction of rows that passed, in `[0.0, 1.0]` (row-level rules only); e.g. `0.95` means a 95% pass rate.
  * @param expectedValue What the rule expected.
  * @param actualValue What was actually measured.
  * @param message Human-readable explanation (e.g. why a rule failed).
