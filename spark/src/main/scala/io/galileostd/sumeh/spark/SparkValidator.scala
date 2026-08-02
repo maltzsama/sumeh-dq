@@ -214,7 +214,13 @@ object SparkValidator {
     // Metrics + constraints for the executable simple rules.
     val simpleResults = executable.zipWithIndex.map {
       case (rule, i) =>
-        val failCount = aggRow.map(r => Option(r.getAs[Long](s"_fail_$i")).getOrElse(0L)).getOrElse(0L)
+        val failCount = aggRow
+          .map {
+            r =>
+              val idx = r.fieldIndex(s"_fail_$i")
+              if (r.isNullAt(idx)) 0L else r.getLong(idx)
+          }
+          .getOrElse(0L)
         val metric = MetricResult(
           metricType = metricTypeFor.getOrElse(rule.checkType, rule.checkType),
           field = rule.field,
@@ -413,7 +419,7 @@ object SparkValidator {
    * Throws: IllegalArgumentException when the field is absent.
    */
   private def requireField(df: DataFrame, field: String): Unit =
-    if (!df.columns.contains(field))
+    if (!df.columns.exists(_.equalsIgnoreCase(field)))
       throw new IllegalArgumentException(s"Field '$field' not found in DataFrame")
 
   /**

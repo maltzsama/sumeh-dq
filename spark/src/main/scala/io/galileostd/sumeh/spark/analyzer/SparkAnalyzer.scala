@@ -43,7 +43,7 @@ trait SparkAnalyzer {
    * Throws: IllegalArgumentException when the field is absent.
    */
   protected def requireField(df: DataFrame, field: String): Unit =
-    if (!df.columns.contains(field))
+    if (!df.columns.exists(_.equalsIgnoreCase(field)))
       throw new IllegalArgumentException(s"Field '$field' not found in DataFrame")
 
   /**
