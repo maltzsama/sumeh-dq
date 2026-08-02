@@ -1503,4 +1503,40 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       e.getAs[String]("timestamp") shouldBe result.timestamp.toString
     }
   }
+
+  "RuleValue implicits" should {
+
+    "validate using plain-typed rules in batch" in {
+      // No LongValue, StringValue, or ListValue imports needed
+      val df = spark.createDataFrame(
+        spark.sparkContext.parallelize(Seq(Row.apply("alice", 25), Row.apply("bob", 42))),
+        StructType(
+          Seq(
+            StructField("name", StringType, false),
+            StructField("age", IntegerType, false)
+          )
+        )
+      )
+      val rules = Seq(
+        RuleDefinition.validated(Left("name"), "is_complete"),
+        RuleDefinition.validated(Left("age"), "is_between", value = Some(List(18, 65)))
+      )
+      val report = SparkValidator.validate(df, rules)
+      report.results should have size 2
+      report.passed should have size 2
+    }
+
+    "validate using plain-typed is_contained_in rule" in {
+      val df = spark.createDataFrame(
+        spark.sparkContext.parallelize(Seq(Row.apply("active"), Row.apply("banned"))),
+        StructType(Seq(StructField("status", StringType, false)))
+      )
+      val rules = Seq(
+        RuleDefinition.validated(Left("status"), "is_contained_in", value = Some(List("active", "pending")))
+      )
+      val report = SparkValidator.validate(df, rules)
+      report.results should have size 1
+      report.failed should have size 1
+    }
+  }
 }

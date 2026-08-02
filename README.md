@@ -127,15 +127,15 @@ credentials += Credentials(
 ### 1. Spark (batch)
 
 ```scala
-import io.galileostd.sumeh.rule.{ RuleDefinition, ListValue, LongValue, StringValue }
+import io.galileostd.sumeh.rule.RuleDefinition
 import io.galileostd.sumeh.spark.SparkValidator
 
 // Define rules programmatically (checked against the registry at build time)
 val rules = Seq(
   RuleDefinition.validated(Left("email"),  "is_complete"),
-  RuleDefinition.validated(Left("age"),     "is_between", value = Some(ListValue(List(LongValue(18), LongValue(65))))),
+  RuleDefinition.validated(Left("age"),     "is_between", value = Some(List(18, 65))),
   RuleDefinition.validated(Left("status"),  "is_contained_in",
-    value = Some(ListValue(List(StringValue("active"), StringValue("pending"))))),
+    value = Some(List("active", "pending"))),
   RuleDefinition.validated(Left("revenue"), "is_positive")
 )
 
@@ -170,13 +170,13 @@ println(report.passRate) // fraction of evaluated rules that passed (skipped exc
 ### 2. Flink (streaming)
 
 ```scala
-import io.galileostd.sumeh.rule.{ RuleDefinition, StringValue }
+import io.galileostd.sumeh.rule.RuleDefinition
 import io.galileostd.sumeh.flink.FlinkValidator
 
 val rules = Seq(
   RuleDefinition.validated(Left("name"), "is_complete"),
   RuleDefinition.validated(Left("amount"), "is_positive"),
-  RuleDefinition.validated(Left("dt"), "validate_date_format", value = Some(StringValue("yyyy-MM-dd")))
+  RuleDefinition.validated(Left("dt"), "validate_date_format", value = Some("yyyy-MM-dd"))
 )
 
 val validated = FlinkValidator.validate(stream, rules)        // DataStream[Row]

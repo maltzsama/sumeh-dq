@@ -383,4 +383,26 @@ class DQProcessFunctionSpec extends AnyWordSpec with Matchers {
       DQProcessFunction.errorsToJson(Nil) shouldBe "[]"
     }
   }
+
+  "RuleValue implicits" should {
+
+    "evaluate a rule built with plain types" in {
+      // No ListValue, LongValue, or StringValue imports needed
+      val rules = Seq(
+        RuleDefinition.validated(Left("age"), "is_between", value = Some(List(18, 65))),
+        RuleDefinition.validated(Left("status"), "is_contained_in", value = Some(List("active", "pending")))
+      )
+      val (errors, skipped) = evaluate(base, rules)
+      errors shouldBe empty
+      skipped shouldBe empty
+    }
+
+    "flag a value outside the plain-typed range" in {
+      val rules = Seq(
+        RuleDefinition.validated(Left("age"), "is_between", value = Some(List(40, 50)))
+      )
+      val (errors, _) = evaluate(base + ("age" -> 30), rules)
+      errors should have size 1
+    }
+  }
 }
