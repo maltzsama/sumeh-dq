@@ -96,6 +96,30 @@ class RuleLoaderSpec extends AnyWordSpec with Matchers {
       val back = RuleLoader.fromCsvString(RuleLoader.toCsv(List(r)))
       back.head.tolerance shouldBe 0.05
     }
+
+    "throw when a quoted field has an embedded newline" in {
+      val csv =
+        """field,check_type,value,threshold,tolerance,execute,level,category
+          |name,satisfies,"line1
+          |line2",1.0,1e-9,true,ROW,sql""".stripMargin
+
+      an[SumehException] should be thrownBy RuleLoader.fromCsvString(csv)
+    }
+
+    "throw when a line has an unterminated quote with no newline involved" in {
+      val csv =
+        """field,check_type,value,threshold,tolerance,execute,level,category
+          |name,is_complete,"unterminated,1.0,1e-9,true,ROW,completeness""".stripMargin
+
+      an[SumehException] should be thrownBy RuleLoader.fromCsvString(csv)
+    }
+
+    "parse a quoted field with a comma correctly" in {
+      val multi = RuleDefinition.validated(Right(List("id", "name")), "are_complete")
+      val csv   = RuleLoader.toCsv(List(multi))
+      val back  = RuleLoader.fromCsvString(csv)
+      back.head.field shouldBe Right(List("id", "name"))
+    }
   }
 
   "RuleLoader.toCsv" should {

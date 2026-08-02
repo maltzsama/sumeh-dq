@@ -2,6 +2,7 @@ package io.galileostd.sumeh.config
 
 import scala.util.Try
 
+import io.galileostd.sumeh.exception.SumehException
 import io.galileostd.sumeh.rule.RuleDefinition
 
 /**
@@ -162,12 +163,17 @@ object RuleLoader {
   /**
    * Parses a single CSV line into fields.
    *
-   * Honors quoted fields: a field wrapped in double quotes may contain commas and newlines, and `""` is treated as a
-   * literal quote. Whitespace around unquoted fields is trimmed.
+   * Honors quoted fields: a field wrapped in double quotes may contain commas, and `""` is treated as a literal
+   * quote. Embedded newlines are not supported — the input is split into physical lines by [[fromCsvString]] before
+   * this function ever sees a line, so a newline inside a quoted field breaks the record in two. Whitespace around
+   * unquoted fields is trimmed.
    *
    * Args: line: The raw line.
    *
    * Returns: The parsed field values, in order.
+   *
+   * Throws: [[io.galileostd.sumeh.exception.SumehException]] if the line ends with an unterminated quote — the
+   *         signal that a quoted field's newline was split across physical lines.
    */
   private def parseCsvLine(line: String): List[String] = {
     val result  = scala.collection.mutable.ListBuffer[String]()
@@ -206,6 +212,13 @@ object RuleLoader {
         }
       }
     }
+
+    if (inQuote)
+      throw new SumehException(
+        s"Unterminated quoted field in CSV line: $line. " +
+          "If this field is meant to contain a newline, quoted multi-line fields are not supported — " +
+          "encode the value with an escape (e.g. \\n) instead of a literal line break."
+      )
 
     result += current.toString.trim
     result.toList
