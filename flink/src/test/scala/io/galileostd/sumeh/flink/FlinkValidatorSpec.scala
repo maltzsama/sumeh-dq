@@ -1,6 +1,6 @@
 package io.galileostd.sumeh.flink
 
-import scala.collection.JavaConverters._
+import scala.jdk.CollectionConverters._
 
 import io.galileostd.sumeh.rule.{ RuleDefinition, StringValue }
 import org.apache.flink.api.common.typeinfo.{ TypeInformation, Types }

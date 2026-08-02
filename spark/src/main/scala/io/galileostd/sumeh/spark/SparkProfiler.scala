@@ -266,7 +266,7 @@ object SparkProfiler {
       rowCount = totalRows,
       completeness = completeness,
       distinctCount = distinct,
-      nullCount = math.round(totalRows * (1.0 - completeness)),
+      nullCount = nullCount,
       uniqueness = uniqueness,
       min = min,
       max = max,
