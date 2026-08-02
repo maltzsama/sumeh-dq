@@ -183,6 +183,30 @@ private[flink] object DQProcessFunction {
     }
 
   /**
+   * Validates that every rule field exists in the stream, once, at job construction.
+   *
+   * A rule targeting a missing column would otherwise read null for every record and silently pass the non-completeness
+   * null short-circuit, contradicting the "no silent passes" contract. The field names are known from the stream's
+   * `RowTypeInfo`, so a typo is caught before the job is submitted. Rules that will be skipped anyway are not checked.
+   *
+   * Args: rules: The rules to validate. fieldNames: Input field names, in positional order.
+   *
+   * Throws: IllegalArgumentException on the first rule whose field is absent from `fieldNames`.
+   */
+  private[flink] def validateFields(rules: Seq[RuleDefinition], fieldNames: Array[String]): Unit =
+    rules.foreach {
+      rule =>
+        if (rule.isApplicableForLevel("ROW") && rule.skipReason("ROW", "flink-streaming").isEmpty)
+          rule.field.fold(f => List(f), identity).foreach {
+            f =>
+              if (!fieldNames.contains(f))
+                throw new IllegalArgumentException(
+                  s"Rule '${rule.checkType}' targets field '$f', which is not in the stream (fields: ${fieldNames.mkString(", ")})"
+                )
+          }
+    }
+
+  /**
    * Serializes error entries as a JSON array string, matching the Spark `_dq_errors` struct fields.
    *
    * Args: errors: The error entries for a record.

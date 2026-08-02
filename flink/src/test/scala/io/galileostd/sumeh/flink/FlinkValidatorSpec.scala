@@ -154,6 +154,12 @@ class FlinkValidatorSpec extends AnyWordSpec with Matchers {
       an[IllegalArgumentException] should be thrownBy FlinkValidator.validate(untyped, Seq.empty)
     }
 
+    "throw at construction when a rule targets a column that is not in the stream" in {
+      val stream = streamOf(positionalRow(1, "alice", 30))
+      val rules  = Seq(RuleDefinition.validated(Left("typo"), "is_complete"))
+      an[IllegalArgumentException] should be thrownBy FlinkValidator.validate(stream, rules)
+    }
+
     "emit each row exactly once on the main output" in {
       val validated = FlinkValidator.validate(
         streamOf(positionalRow(1, "alice", 30), positionalRow(2, null, 25), positionalRow(3, "bob", -5)),
