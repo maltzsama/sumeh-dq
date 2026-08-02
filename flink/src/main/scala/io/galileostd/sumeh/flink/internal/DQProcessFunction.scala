@@ -92,6 +92,13 @@ private[flink] class DQProcessFunction(
     }
 
   /**
+   * Rules that should actually execute — ROW-level and not engine-skipped. Filtered once at job construction instead
+   * of re-evaluating isApplicableForLevel + skipReason for every record on the hot path.
+   */
+  private val executableRules: Seq[RuleDefinition] =
+    rules.filter(r => r.isApplicableForLevel("ROW") && r.skipReason("ROW", "flink-streaming").isEmpty)
+
+  /**
    * Evaluates one record and emits the enriched row.
    *
    * The record's fields are copied by position into a widened row and augmented with `_dq_errors` (a JSON array of
@@ -110,7 +117,9 @@ private[flink] class DQProcessFunction(
 
     val values = fieldNames.indices.map(i => fieldNames(i) -> row.getField(i)).toMap
 
-    val (errors, _) = DQProcessFunction.evaluate(values, rules, patternCache, dateFormatCache)
+    val (errors, _) = DQProcessFunction.evaluateExecutable(
+      values, executableRules, patternCache, dateFormatCache
+    )
 
     val enriched = new Row(fieldNames.length + 2)
     var i        = 0
@@ -158,14 +167,43 @@ final private[flink] case class DQError(
 private[flink] object DQProcessFunction {
 
   /**
-   * Pure row-level evaluation of a single record.
+   * Evaluate a single record against pre-filtered executable rules.
    *
-   * Returns a `(errors, skippedReasons)` pair. TABLE-level rules are always skipped with an explanatory reason; rules
-   * whose `skipReason` yields a reason are skipped; any exception thrown while evaluating a rule is captured as an
-   * ERROR entry.
+   * The caller has already filtered out TABLE-level and engine-skipped rules — this method evaluates every rule in
+   * the list unconditionally. Skipped reasons come from the caller's [[DQProcessFunction.precomputedSkipped]].
    *
    * @param values Field-name-to-value map of the record.
-   * @param rules Rules to evaluate.
+   * @param rules Pre-filtered rules (only ROW-level, not engine-skipped).
+   * @param patterns pre-compiled `has_pattern` regexes keyed by regex string, compiled once per operator
+   * @param formats pre-compiled `validate_date_format` formatters keyed by format string, compiled once per operator
+   * @return A tuple of structured error entries and an empty skipped list (skipped is pre-computed by the caller).
+   */
+  private[flink] def evaluateExecutable(
+      values: Map[String, Any],
+      rules: Seq[RuleDefinition],
+      patterns: Map[String, java.util.regex.Pattern],
+      formats: Map[String, DateTimeFormatter]
+  ): (List[DQError], List[String]) = {
+    val errors = scala.collection.mutable.ListBuffer[DQError]()
+
+    for (rule <- rules)
+      try
+        if (!checkRule(values, rule, patterns, formats)) errors += buildError(rule)
+      catch {
+        case e: Exception => errors += buildError(rule, Some(s"ERROR[${rule.checkType}]: ${e.getMessage}"))
+      }
+
+    (errors.toList, Nil)
+  }
+
+  /**
+   * Pure row-level evaluation of a single record, with inline skip-rule discovery.
+   *
+   * Iterates all `rules`, applying `isApplicableForLevel` and `skipReason` per rule. Use [[evaluateExecutable]] in
+   * production paths where rules are pre-filtered; this overload exists for backward compatibility with tests.
+   *
+   * @param values Field-name-to-value map of the record.
+   * @param rules Rules to evaluate (may include TABLE-level and skipped rules).
    * @param patterns pre-compiled `has_pattern` regexes keyed by regex string, compiled once per operator
    * @param formats pre-compiled `validate_date_format` formatters keyed by format string, compiled once per operator
    * @return A tuple of structured error entries and skipped-rule reasons.
