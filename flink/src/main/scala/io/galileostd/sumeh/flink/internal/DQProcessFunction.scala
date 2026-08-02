@@ -40,7 +40,12 @@ private[flink] class DQProcessFunction(
    */
   private val patternCache: Map[String, java.util.regex.Pattern] =
     rules
-      .filter(r => RuleRegistry.canonical(r.checkType) == "has_pattern")
+      .filter(
+        r =>
+          RuleRegistry.canonical(r.checkType) == "has_pattern" &&
+            r.isApplicableForLevel("ROW") &&
+            r.skipReason("ROW", "flink-streaming").isEmpty
+      )
       .map {
         r =>
           val regex = DQProcessFunction.requireString(r, "has_pattern requires a regex pattern")
