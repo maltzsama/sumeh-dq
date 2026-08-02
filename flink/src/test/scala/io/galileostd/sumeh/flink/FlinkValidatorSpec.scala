@@ -261,5 +261,30 @@ class FlinkValidatorSpec extends AnyWordSpec with Matchers {
       good.executeAndCollect(10).asScala.map(_.getField(0).asInstanceOf[String]).toSet shouldBe Set("a@b.com")
       bad.executeAndCollect(10).asScala.map(_.getField(0).asInstanceOf[String]).toSet shouldBe Set("x@y.z")
     }
+
+    "not compile a has_pattern regex when the rule is skipped" in {
+      val emailType = new RowTypeInfo(
+        Array[TypeInformation[_]](Types.STRING),
+        Array[String]("email")
+      )
+      val env = StreamExecutionEnvironment.getExecutionEnvironment
+      env.setParallelism(1)
+      def row(email: String): Row = {
+        val r = new Row(1)
+        r.setField(0, email)
+        r
+      }
+      val stream = env.fromCollection(java.util.Arrays.asList(row("a@b.com")), emailType)
+
+      val rules = Seq(
+        RuleDefinition.validated(
+          Left("email"),
+          "has_pattern",
+          value = Some(StringValue("[unterminated")),
+          execute = false
+        )
+      )
+      noException should be thrownBy FlinkValidator.validate(stream, rules)
+    }
   }
 }
