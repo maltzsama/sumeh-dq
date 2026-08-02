@@ -21,11 +21,12 @@ private[spark] object FailCondition {
    * Trust boundary: the `satisfies` case compiles the rule's `value` as Spark SQL via `F.expr`, so that value is
    * executed during validation. Only pass rules from sources you trust (your own config, not end-user input).
    *
-   * Args: rule: The rule whose violation is tested.
-   *
-   * Returns: A Boolean column — `true` when the row fails the rule.
-   *
-   * Throws: IllegalArgumentException when no condition is defined for `rule.checkType`.
+   * @param rule
+   *   The rule whose violation is tested.
+   * @return
+   *   A Boolean column — `true` when the row fails the rule.
+   * @throws java.lang.IllegalArgumentException
+   *   when no condition is defined for `rule.checkType`.
    */
   def apply(rule: RuleDefinition): Column = {
     val field = rule.field.fold(identity, _.head)
@@ -132,11 +133,14 @@ private[spark] object FailCondition {
   /**
    * Extracts a string value from the rule, throwing when absent.
    *
-   * Args: rule: The rule whose value to extract. msg: The error message when the value is absent.
-   *
-   * Returns: The `StringValue` contents.
-   *
-   * Throws: IllegalArgumentException when `value` is missing or is not a `StringValue`.
+   * @param rule
+   *   The rule whose value to extract.
+   * @param msg
+   *   The error message when the value is absent.
+   * @return
+   *   The `StringValue` contents.
+   * @throws java.lang.IllegalArgumentException
+   *   when `value` is missing or is not a `StringValue`.
    */
   private[spark] def requireString(rule: RuleDefinition, msg: String): String =
     rule.value
@@ -146,11 +150,14 @@ private[spark] object FailCondition {
   /**
    * Extracts a list value from the rule, throwing when absent.
    *
-   * Args: rule: The rule whose value to extract. msg: The error message when the value is absent.
-   *
-   * Returns: The `ListValue` items.
-   *
-   * Throws: IllegalArgumentException when `value` is missing or is not a `ListValue`.
+   * @param rule
+   *   The rule whose value to extract.
+   * @param msg
+   *   The error message when the value is absent.
+   * @return
+   *   The `ListValue` items.
+   * @throws java.lang.IllegalArgumentException
+   *   when `value` is missing or is not a `ListValue`.
    */
   private[spark] def requireList(rule: RuleDefinition, msg: String): List[RuleValue] =
     rule.value
@@ -160,11 +167,14 @@ private[spark] object FailCondition {
   /**
    * Extracts a pair `(lo, hi)` from the rule's list value, throwing when absent.
    *
-   * Args: rule: The rule whose value to extract. msg: The error message when the value is absent.
-   *
-   * Returns: The two items of the `ListValue`.
-   *
-   * Throws: IllegalArgumentException when `value` is missing or is not a two-element `ListValue`.
+   * @param rule
+   *   The rule whose value to extract.
+   * @param msg
+   *   The error message when the value is absent.
+   * @return
+   *   The two items of the `ListValue`.
+   * @throws java.lang.IllegalArgumentException
+   *   when `value` is missing or is not a two-element `ListValue`.
    */
   private[spark] def requirePair(rule: RuleDefinition, msg: String): (RuleValue, RuleValue) =
     rule.value match {
@@ -175,11 +185,14 @@ private[spark] object FailCondition {
   /**
    * Extracts the rule value converted to a plain JVM literal via `RuleValue.toAny`, throwing when absent.
    *
-   * Args: rule: The rule whose value to extract. msg: The error message when the value is absent.
-   *
-   * Returns: The plain JVM literal.
-   *
-   * Throws: IllegalArgumentException when `value` is absent.
+   * @param rule
+   *   The rule whose value to extract.
+   * @param msg
+   *   The error message when the value is absent.
+   * @return
+   *   The plain JVM literal.
+   * @throws java.lang.IllegalArgumentException
+   *   when `value` is absent.
    */
   private[spark] def requireValue(rule: RuleDefinition, msg: String): Any =
     rule.value.map(RuleValue.toAny).getOrElse(throw new IllegalArgumentException(msg))

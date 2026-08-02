@@ -121,9 +121,12 @@ object SparkValidator {
    * `checkType:reason` string with `|` separators in both engines. Cross-engine sinks must handle the two `_dq_errors`
    * shapes.
    *
-   * Args: df: The DataFrame to validate (batch or streaming). rules: The rules to run.
-   *
-   * Returns: A report with per-rule results and the validated wrapper for splitting.
+   * @param df
+   *   The DataFrame to validate (batch or streaming).
+   * @param rules
+   *   The rules to run.
+   * @return
+   *   A report with per-rule results and the validated wrapper for splitting.
    */
   def validate(
       df: DataFrame,
@@ -148,9 +151,12 @@ object SparkValidator {
    * A rule whose `FailCondition` throws or whose field is missing becomes an ERROR result and is excluded from the
    * shared agg — it never aborts the batch.
    *
-   * Args: df: The DataFrame to validate. rules: The rules to run.
-   *
-   * Returns: A complete report with the annotated DataFrame attached.
+   * @param df
+   *   The DataFrame to validate.
+   * @param rules
+   *   The rules to run.
+   * @return
+   *   A complete report with the annotated DataFrame attached.
    */
   private def validateBatch(
       df: DataFrame,
@@ -323,9 +329,12 @@ object SparkValidator {
    * and no rule carries a runtime verdict (there is no finite aggregation on a stream). TABLE rules are always skipped
    * on a stream, and all skip reasons are joined into a `_dq_skipped` column.
    *
-   * Args: df: The streaming DataFrame to validate. rules: The rules to run.
-   *
-   * Returns: A report (totalRows `-1L`, engine `"spark-streaming"`) with the annotated DataFrame attached.
+   * @param df
+   *   The streaming DataFrame to validate.
+   * @param rules
+   *   The rules to run.
+   * @return
+   *   A report (totalRows `-1L`, engine `"spark-streaming"`) with the annotated DataFrame attached.
    */
   private def validateStreaming(
       df: DataFrame,
@@ -395,9 +404,12 @@ object SparkValidator {
    * Replaces the `requireField` calls that lived inside the analyzers, which the single-pass batch path no longer
    * invokes. `satisfies` references arbitrary SQL, so its `field` is not checked (matching the analyzer's behavior).
    *
-   * Args: df: The DataFrame being validated. rule: The rule whose columns to check.
-   *
-   * Throws: IllegalArgumentException when a referenced column is absent.
+   * @param df
+   *   The DataFrame being validated.
+   * @param rule
+   *   The rule whose columns to check.
+   * @throws java.lang.IllegalArgumentException
+   *   when a referenced column is absent.
    */
   private def validateFields(df: DataFrame, rule: RuleDefinition): Unit = {
     if (rule.checkType != "satisfies")
@@ -414,9 +426,12 @@ object SparkValidator {
   /**
    * Throws if the field is not a column of the DataFrame.
    *
-   * Args: df: The DataFrame. field: The column name to check.
-   *
-   * Throws: IllegalArgumentException when the field is absent.
+   * @param df
+   *   The DataFrame.
+   * @param field
+   *   The column name to check.
+   * @throws java.lang.IllegalArgumentException
+   *   when the field is absent.
    */
   private def requireField(df: DataFrame, field: String): Unit =
     if (!df.columns.exists(_.equalsIgnoreCase(field)))
@@ -426,9 +441,14 @@ object SparkValidator {
    * Rebuilds the metadata an analyzer used to attach to its metric, preserving the exact keys the single-pass rewrite
    * replaces. Keeps the user-facing report stable.
    *
-   * Args: rule: The rule. failCount: Number of failing rows (from the shared agg). totalRows: Total rows.
-   *
-   * Returns: The metadata map, mirroring the original analyzer output.
+   * @param rule
+   *   The rule.
+   * @param failCount
+   *   Number of failing rows (from the shared agg).
+   * @param totalRows
+   *   Total rows.
+   * @return
+   *   The metadata map, mirroring the original analyzer output.
    */
   private def buildMetricMetadata(rule: RuleDefinition, failCount: Long, totalRows: Long): Map[String, Any] =
     rule.checkType match {
@@ -502,9 +522,12 @@ object SparkValidator {
   /**
    * Builds the `_dq_errors` struct entry for a rule result.
    *
-   * Args: rule: The rule. result: The constraint result carrying id/message/expected/actual.
-   *
-   * Returns: A struct column matching `errorSchema`.
+   * @param rule
+   *   The rule.
+   * @param result
+   *   The constraint result carrying id/message/expected/actual.
+   * @return
+   *   A struct column matching `errorSchema`.
    */
   private def errorStruct(rule: RuleDefinition, result: ValidationResult): Column =
     F.struct(
@@ -521,9 +544,14 @@ object SparkValidator {
   /**
    * Builds a SKIPPED result for a rule.
    *
-   * Args: rule: The rule. level: The level being evaluated. reason: Why the rule was skipped.
-   *
-   * Returns: A SKIPPED [[io.galileostd.sumeh.validation.ValidationResult]].
+   * @param rule
+   *   The rule.
+   * @param level
+   *   The level being evaluated.
+   * @param reason
+   *   Why the rule was skipped.
+   * @return
+   *   A SKIPPED [[io.galileostd.sumeh.validation.ValidationResult]].
    */
   private def skippedResult(rule: RuleDefinition, level: ValidationLevel, reason: String) =
     ValidationResult.skipped(
@@ -537,9 +565,14 @@ object SparkValidator {
   /**
    * Builds an ERROR result for a rule.
    *
-   * Args: rule: The rule. level: The level being evaluated. msg: The error message.
-   *
-   * Returns: An ERROR [[io.galileostd.sumeh.validation.ValidationResult]].
+   * @param rule
+   *   The rule.
+   * @param level
+   *   The level being evaluated.
+   * @param msg
+   *   The error message.
+   * @return
+   *   An ERROR [[io.galileostd.sumeh.validation.ValidationResult]].
    */
   private def errorResult(rule: RuleDefinition, level: ValidationLevel, msg: String) =
     ValidationResult(
@@ -558,9 +591,10 @@ object SparkValidator {
    * A stream has no finite aggregation, so no pass rate is computed — the rule is reported as applied without a
    * `passRate`. This keeps `report.size` honest: every rule that ran appears in the report.
    *
-   * Args: rule: The rule that was applied.
-   *
-   * Returns: A PASS [[io.galileostd.sumeh.validation.ValidationResult]] with no pass rate.
+   * @param rule
+   *   The rule that was applied.
+   * @return
+   *   A PASS [[io.galileostd.sumeh.validation.ValidationResult]] with no pass rate.
    */
   private def streamingResult(rule: RuleDefinition) =
     ValidationResult(

@@ -56,9 +56,10 @@ object SparkSchemaValidator {
    * Numeric types collapse to `integer`/`float`, temporal types to `datetime`, and struct/map to `complex`, so a
    * contract written in portable terms (`"integer"`, `"datetime"`, ...) compares against Spark's concrete types.
    *
-   * Args: dt: The Spark data type.
-   *
-   * Returns: The canonical type name, or `"unknown"` for unmapped types.
+   * @param dt
+   *   The Spark data type.
+   * @return
+   *   The canonical type name, or `"unknown"` for unmapped types.
    */
   private def toCanonical(dt: DataType): String = dt match {
     case _: ByteType | _: ShortType | _: IntegerType | _: LongType => "integer"
@@ -82,9 +83,10 @@ object SparkSchemaValidator {
    * Each info map holds `raw_type`, `nullable`, and `comment`, plus `element_type` (arrays) or `nested_fields`
    * (structs) where applicable.
    *
-   * Args: df: The DataFrame.
-   *
-   * Returns: Column name → schema info.
+   * @param df
+   *   The DataFrame.
+   * @return
+   *   Column name → schema info.
    */
   def extractSchema(df: DataFrame): Map[String, Map[String, Any]] =
     df.schema.fields.map {
@@ -112,9 +114,10 @@ object SparkSchemaValidator {
   /**
    * Extracts a nested struct's fields as a `colName -> info` map.
    *
-   * Args: st: The struct type.
-   *
-   * Returns: Nested field name → basic info (`raw_type`, `nullable`, empty `comment`).
+   * @param st
+   *   The struct type.
+   * @return
+   *   Nested field name → basic info (`raw_type`, `nullable`, empty `comment`).
    */
   private def extractSchemaFromStructType(st: StructType): Map[String, Map[String, Any]] =
     st.fields.map {
@@ -137,9 +140,12 @@ object SparkSchemaValidator {
    * Compares types, nullability, comments, array element types, and nested struct fields. When `strictColumns` is set
    * on the contract, columns present in the data but absent from the contract are reported as `extraCols`.
    *
-   * Args: df: The DataFrame. expected: The schema contract.
-   *
-   * Returns: A `SchemaReport` summarizing the outcome.
+   * @param df
+   *   The DataFrame.
+   * @param expected
+   *   The schema contract.
+   * @return
+   *   A `SchemaReport` summarizing the outcome.
    */
   def validate(df: DataFrame, expected: SchemaDef): SchemaReport = {
     val actual = extractSchema(df)
@@ -161,10 +167,14 @@ object SparkSchemaValidator {
    * For each expected column it checks presence, canonical type, array element type, comment, nullability, and nested
    * fields, merging child reports into a single one. Missing optional columns are ignored.
    *
-   * Args: expectedCols: The contract columns. actualCols: The extracted schema info, keyed by column name. parentPath:
-   * Dot-prefix for nested column names in messages (e.g. `"address.street"`).
-   *
-   * Returns: A [[io.galileostd.sumeh.schema.SchemaReport]] with the collected issues.
+   * @param expectedCols
+   *   The contract columns.
+   * @param actualCols
+   *   The extracted schema info, keyed by column name.
+   * @param parentPath
+   *   Dot-prefix for nested column names in messages (e.g. `"address.street"`).
+   * @return
+   *   A [[io.galileostd.sumeh.schema.SchemaReport]] with the collected issues.
    */
   private def validateRecursive(
       expectedCols: List[ColumnDef],
@@ -252,9 +262,10 @@ object SparkSchemaValidator {
    * `varchar(10)`, `decimal(10,2)` etc. are trimmed before the parameter list, then looked up in `typeMap`. Unknown
    * names return `"unknown"` so the caller can report a misconfigured contract instead of silently skipping the check.
    *
-   * Args: t: The contract type string.
-   *
-   * Returns: The canonical type, or `"unknown"` when not recognized.
+   * @param t
+   *   The contract type string.
+   * @return
+   *   The canonical type, or `"unknown"` when not recognized.
    */
   private def canonExpectedType(t: String): String = {
     val low  = t.toLowerCase.trim

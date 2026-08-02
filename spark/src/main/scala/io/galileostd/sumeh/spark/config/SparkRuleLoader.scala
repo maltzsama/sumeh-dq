@@ -19,11 +19,12 @@ object SparkRuleLoader {
    * Each row becomes one rule via `RuleDefinition.fromMap`; cell values are stringified so numbers and booleans parse
    * cleanly.
    *
-   * Args: df: DataFrame with `field` and `check_type` columns (and optionally the others).
-   *
-   * Returns: The parsed rules, one per row.
-   *
-   * Throws: IllegalArgumentException when `field` or `check_type` is missing.
+   * @param df
+   *   DataFrame with `field` and `check_type` columns (and optionally the others).
+   * @return
+   *   The parsed rules, one per row.
+   * @throws java.lang.IllegalArgumentException
+   *   when `field` or `check_type` is missing.
    */
   def fromDataFrame(df: DataFrame): List[RuleDefinition] = {
     val required = Set("field", "check_type")
@@ -43,11 +44,14 @@ object SparkRuleLoader {
   /**
    * Loads rules from a DataFrame where each row holds one rule as a JSON object.
    *
-   * Args: df: The DataFrame. column: The column containing the JSON (default `"config"`).
-   *
-   * Returns: The parsed rules, flattened across all rows.
-   *
-   * Throws: IllegalArgumentException when the column does not exist.
+   * @param df
+   *   The DataFrame.
+   * @param column
+   *   The column containing the JSON (default `"config"`).
+   * @return
+   *   The parsed rules, flattened across all rows.
+   * @throws java.lang.IllegalArgumentException
+   *   when the column does not exist.
    */
   def fromJsonColumn(df: DataFrame, column: String = "config"): List[RuleDefinition] = {
     require(df.columns.contains(column), s"Column '$column' not found")

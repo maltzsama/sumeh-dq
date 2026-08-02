@@ -18,9 +18,10 @@ private[galileostd] object DateExpr {
    * ANSI-safe (where `to_date` throws on bad input); preserves null-on-invalid semantics on Spark 3.5+ and 4.x via
    * `try_to_timestamp`.
    *
-   * Args: col: The column to convert.
-   *
-   * Returns: A date column expression.
+   * @param col
+   *   The column to convert.
+   * @return
+   *   A date column expression.
    */
   def safeToDate(col: Column): Column = to_date(try_to_timestamp(col))
 }

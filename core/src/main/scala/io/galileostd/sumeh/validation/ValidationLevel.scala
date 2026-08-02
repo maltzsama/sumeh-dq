@@ -28,11 +28,12 @@ object ValidationLevel {
   /**
    * Parses a level from its string name.
    *
-   * Args: s: The level name, `"ROW"` or `"TABLE"` (case-insensitive).
-   *
-   * Returns: The matching [[ValidationLevel]].
-   *
-   * Throws: IllegalArgumentException when the name is unknown.
+   * @param s
+   *   The level name, `"ROW"` or `"TABLE"` (case-insensitive).
+   * @return
+   *   The matching [[ValidationLevel]].
+   * @throws java.lang.IllegalArgumentException
+   *   when the name is unknown.
    */
   def fromString(s: String): ValidationLevel = s.toUpperCase match {
     case "ROW"   => ROW

@@ -6,10 +6,18 @@ package io.galileostd.sumeh.rule
  * Describes everything an engine needs to decide whether and how to run a rule: which level it operates at, which
  * category it belongs to, which engines can execute it, and whether it is an alias of another rule.
  *
- * Args: checkType: The rule name (e.g. `"is_complete"`). level: Validation level, `ROW` or `TABLE`. category: Rule
- * category (completeness, uniqueness, comparison, ...). description: Human-readable description of what the rule
- * checks. engines: Set of engine names where the rule is supported (e.g. `"spark"`, `"flink-streaming"`). aliasOf: When
- * set, this rule is an alias of another `checkType` and behaves identically.
+ * @param checkType
+ *   The rule name (e.g. `"is_complete"`).
+ * @param level
+ *   Validation level, `ROW` or `TABLE`.
+ * @param category
+ *   Rule category (completeness, uniqueness, comparison, ...).
+ * @param description
+ *   Human-readable description of what the rule checks.
+ * @param engines
+ *   Set of engine names where the rule is supported (e.g. `"spark"`, `"flink-streaming"`).
+ * @param aliasOf
+ *   When set, this rule is an alias of another `checkType` and behaves identically.
  */
 final case class RuleEntry(
     checkType: String,
@@ -168,16 +176,18 @@ object RuleRegistry {
   /**
    * Looks up a rule's metadata by `checkType`.
    *
-   * Args: checkType: The rule name.
-   *
-   * Returns: The rule's [[RuleEntry]], or `None` if it is not registered.
+   * @param checkType
+   *   The rule name.
+   * @return
+   *   The rule's [[RuleEntry]], or `None` if it is not registered.
    */
   def getRule(checkType: String): Option[RuleEntry] = manifest.get(checkType)
 
   /**
    * All registered rule names, in declaration order.
    *
-   * Returns: The full list of `checkType` names (aliases included).
+   * @return
+   *   The full list of `checkType` names (aliases included).
    */
   def listRules(): List[String] = entries.map(_.checkType)
 
@@ -187,9 +197,12 @@ object RuleRegistry {
    * Used together with [[io.galileostd.sumeh.rule.RuleDefinition.skipReason]] so unsupported rules are skipped with a
    * reason instead of silently passing.
    *
-   * Args: checkType: The rule name. engine: The engine name (e.g. `"spark"`, `"flink-streaming"`).
-   *
-   * Returns: `true` when the engine is in the rule's `engines` set.
+   * @param checkType
+   *   The rule name.
+   * @param engine
+   *   The engine name (e.g. `"spark"`, `"flink-streaming"`).
+   * @return
+   *   `true` when the engine is in the rule's `engines` set.
    */
   def isSupported(checkType: String, engine: String): Boolean =
     manifest.get(checkType).exists(_.engines.contains(engine))
@@ -200,9 +213,10 @@ object RuleRegistry {
    * Engines dispatch on the canonical name while still reporting the original `checkType` to the user, so an alias is
    * never missed by one engine and implemented by another.
    *
-   * Args: checkType: The rule name, possibly an alias.
-   *
-   * Returns: The canonical `checkType`, or the input when it is not an alias.
+   * @param checkType
+   *   The rule name, possibly an alias.
+   * @return
+   *   The canonical `checkType`, or the input when it is not an alias.
    */
   def canonical(checkType: String): String =
     manifest.get(checkType).flatMap(_.aliasOf).getOrElse(checkType)
@@ -210,9 +224,10 @@ object RuleRegistry {
   /**
    * Rules belonging to a category.
    *
-   * Args: category: The category name (e.g. `"date"`, `"aggregation"`, case-insensitive).
-   *
-   * Returns: The matching [[RuleEntry]]s in declaration order.
+   * @param category
+   *   The category name (e.g. `"date"`, `"aggregation"`, case-insensitive).
+   * @return
+   *   The matching [[RuleEntry]]s in declaration order.
    */
   def byCategory(category: String): List[RuleEntry] =
     entries.filter(_.category == category.toLowerCase)
@@ -220,9 +235,10 @@ object RuleRegistry {
   /**
    * Rules at a given level.
    *
-   * Args: level: The level name — `ROW` or `TABLE` (case-insensitive).
-   *
-   * Returns: The matching [[RuleEntry]]s in declaration order.
+   * @param level
+   *   The level name — `ROW` or `TABLE` (case-insensitive).
+   * @return
+   *   The matching [[RuleEntry]]s in declaration order.
    */
   def byLevel(level: String): List[RuleEntry] = entries.filter(_.level == level.toUpperCase)
 }

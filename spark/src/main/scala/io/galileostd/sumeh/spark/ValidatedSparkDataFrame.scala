@@ -19,7 +19,8 @@ import org.apache.spark.sql.{ functions => F, DataFrame }
  * Use [[splitByErrors]] (or the implicit [[io.galileostd.sumeh.engine.Splittable]]) to separate good from bad in one
  * pass.
  *
- * Args: df: The validated DataFrame, with the `_dq_errors` column.
+ * @param df
+ *   The validated DataFrame, with the `_dq_errors` column.
  */
 class ValidatedSparkDataFrame(private val df: DataFrame) {
 
@@ -33,11 +34,12 @@ class ValidatedSparkDataFrame(private val df: DataFrame) {
    * violate a rule are always marked in `_dq_errors`, even when the rule passes the threshold. A report with pass rate
    * 1.0 can still have rows in the `bad` DataFrame.
    *
-   * Args: errorColumn: Name of the errors column (default `"_dq_errors"`).
-   *
-   * Returns: A `(good, bad)` tuple of DataFrames.
-   *
-   * Throws: IllegalArgumentException when the error column is absent from the DataFrame.
+   * @param errorColumn
+   *   Name of the errors column (default `"_dq_errors"`).
+   * @return
+   *   A `(good, bad)` tuple of DataFrames.
+   * @throws java.lang.IllegalArgumentException
+   *   when the error column is absent from the DataFrame.
    */
   def splitByErrors(errorColumn: String = "_dq_errors"): (DataFrame, DataFrame) = {
     require(df.columns.contains(errorColumn), s"Column '$errorColumn' not found")
@@ -50,28 +52,32 @@ class ValidatedSparkDataFrame(private val df: DataFrame) {
   /**
    * The underlying Spark DataFrame.
    *
-   * Returns: The raw DataFrame, including the `_dq_errors` column.
+   * @return
+   *   The raw DataFrame, including the `_dq_errors` column.
    */
   def toNative: DataFrame = df
 
   /**
    * Column names of the validated DataFrame.
    *
-   * Returns: The underlying DataFrame's columns.
+   * @return
+   *   The underlying DataFrame's columns.
    */
   def columns: Array[String] = df.columns
 
   /**
    * Row count of the validated DataFrame.
    *
-   * Returns: The underlying DataFrame's row count.
+   * @return
+   *   The underlying DataFrame's row count.
    */
   def count(): Long = df.count()
 
   /**
    * Pretty-prints the first `n` rows.
    *
-   * Args: n: Number of rows to print (default 20).
+   * @param n
+   *   Number of rows to print (default 20).
    */
   def show(n: Int = 20): Unit = df.show(n)
 }
@@ -84,7 +90,8 @@ object ValidatedSparkDataFrame {
   /**
    * Implicit `Splittable` instance so `report.split` works on the validated wrapper.
    *
-   * Returns: A `(good, bad)` pair of re-wrapped validated DataFrames.
+   * @return
+   *   A `(good, bad)` pair of re-wrapped validated DataFrames.
    */
   implicit val splittable: Splittable[ValidatedSparkDataFrame] =
     new Splittable[ValidatedSparkDataFrame] {
@@ -92,7 +99,8 @@ object ValidatedSparkDataFrame {
       /**
        * Splits via [[splitByErrors]] and re-wraps both sides.
        *
-       * Returns: A `(good, bad)` pair of validated wrappers.
+       * @return
+       *   A `(good, bad)` pair of validated wrappers.
        */
       def split(df: ValidatedSparkDataFrame): (ValidatedSparkDataFrame, ValidatedSparkDataFrame) = {
         val (good, bad) = df.splitByErrors()
