@@ -76,6 +76,7 @@ object CompletenessConstraint extends SparkConstraint {
           Some(
             s"Completeness ${pct(metric.value)}% below threshold ${pct(rule.threshold)}%"
           ),
+      expectedValue = Some(rule.threshold),
       metadata = metric.metadata
     )
   }
@@ -116,6 +117,7 @@ object UniquenessConstraint extends SparkConstraint {
           Some(
             s"Uniqueness ${pct(metric.value)}% below threshold ${pct(rule.threshold)}%"
           ),
+      expectedValue = Some(rule.threshold),
       metadata = metric.metadata
     )
   }
@@ -149,6 +151,7 @@ object GenericConstraint extends SparkConstraint {
       category = rule.category,
       status = if (passed) ValidationStatus.PASS else ValidationStatus.FAIL,
       passRate = Some(metric.value),
+      expectedValue = Some(rule.threshold),
       actualValue = Some(metric.value),
       message =
         if (passed) None
@@ -212,6 +215,7 @@ object AggregationConstraint extends SparkConstraint {
       level = ValidationLevel.TABLE,
       category = rule.category,
       status = if (passed) ValidationStatus.PASS else ValidationStatus.FAIL,
+      expectedValue = Some(expected),
       actualValue = Some(metric.value),
       message =
         if (passed) None

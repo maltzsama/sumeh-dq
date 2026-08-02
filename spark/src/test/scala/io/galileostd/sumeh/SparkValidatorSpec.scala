@@ -1434,5 +1434,43 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
         "rule_id", "check_type", "field", "category", "expected", "actual", "message", "timestamp"
       )
     }
+
+    "fill expectedValue with the rule threshold for ROW rules" in {
+      val rules  = Seq(RuleDefinition.validated(Left("name"), "is_complete", threshold = 0.9))
+      val report = SparkValidator.validate(dfBasic, rules)
+      report.results.head.expectedValue shouldBe Some(0.9)
+    }
+
+    "fill expectedValue with the expected number for aggregation rules" in {
+      import io.galileostd.sumeh.rule.LongValue
+      val rules  = Seq(RuleDefinition.validated(Left("age"), "has_sum", value = Some(LongValue(100))))
+      val report = SparkValidator.validate(dfBasic, rules)
+      report.results.head.expectedValue shouldBe Some(100.0)
+    }
+
+    "write the expected value into the _dq_errors struct" in {
+      val rule   = RuleDefinition.validated(Left("name"), "is_complete", threshold = 1.0)
+      val report = SparkValidator.validate(dfBasic, Seq(rule))
+      val (_, bad) = report.dfValidated.get.splitByErrors()
+      val e = bad.select(F.col("_dq_errors")(0).alias("e")).collect()(0).getStruct(0)
+      e.getAs[String]("expected") shouldBe "1.0"
+    }
+
+    "write the correct value into every field of the struct" in {
+      val rule   = RuleDefinition.validated(Left("name"), "is_complete", threshold = 1.0)
+      val report = SparkValidator.validate(dfBasic, Seq(rule))
+      val result = report.results.head
+      val (_, bad) = report.dfValidated.get.splitByErrors()
+      val e       = bad.select(F.col("_dq_errors")(0).alias("e")).collect()(0).getStruct(0)
+
+      e.getAs[String]("rule_id") shouldBe result.id
+      e.getAs[String]("check_type") shouldBe "is_complete"
+      e.getAs[String]("field") shouldBe "name"
+      e.getAs[String]("category") shouldBe "completeness"
+      e.getAs[String]("expected") shouldBe result.expectedValue.get.toString
+      e.getAs[String]("actual") shouldBe result.actualValue.get.toString
+      e.getAs[String]("message") shouldBe result.message.orNull
+      e.getAs[String]("timestamp") shouldBe result.timestamp.toString
+    }
   }
 }

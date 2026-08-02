@@ -141,7 +141,7 @@ final case class ValidationReport[DF](
           "level"      -> r.level.toString,
           "status"     -> r.status.toString,
           "pass_rate"  -> r.passRate.map(java.lang.Double.valueOf(_)).orNull,
-          "expected"   -> r.expectedValue.orNull,
+          "expected"   -> r.expectedValue.map(java.lang.Double.valueOf(_)).orNull,
           "actual"     -> r.actualValue.map(java.lang.Double.valueOf(_)).orNull,
           "message"    -> r.message.orNull,
           "fail_count" -> failCountOf(r)

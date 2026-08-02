@@ -3,8 +3,6 @@ package io.galileostd.sumeh.validation
 import java.time.LocalDateTime
 import java.util.UUID
 
-import io.galileostd.sumeh.rule.RuleValue
-
 /**
  * Output of a Constraint — compares a metric to the rule expectation.
  *
@@ -29,7 +27,7 @@ final case class ValidationResult(
     field: Either[String, List[String]] = Left(""),
     status: ValidationStatus = ValidationStatus.ERROR,
     passRate: Option[Double] = None,
-    expectedValue: Option[RuleValue] = None,
+    expectedValue: Option[Double] = None,
     actualValue: Option[Double] = None,
     message: Option[String] = None,
     metadata: Map[String, Any] = Map.empty
