@@ -11,6 +11,8 @@
 
 > **Data Quality for the modern data stack.** One rule engine, two execution backends — validate your Spark batches and your Flink streams with the same 50+ rule catalog.
 
+> 🐍 **Python counterpart:** [`sumeh`](https://github.com/maltzsama/sumeh) — the same rule catalog and validation model for pandas, Polars, DuckDB, BigQuery, and more. The `_dq_errors` output is field-compatible across both.
+
 Sumeh is a Scala data-quality library that runs the same declarative validation rules against **Apache Spark** (batch) and **Apache Flink** (streaming). It follows the **Bifurcation Pattern**: a single pass over your data tags every bad row, so you can split `(good, bad)` without reprocessing or shuffling.
 
 ```mermaid

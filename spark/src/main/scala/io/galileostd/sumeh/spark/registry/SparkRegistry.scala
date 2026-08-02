@@ -76,12 +76,9 @@ object SparkRegistry {
   /**
    * Returns the analyzer for a `check_type`, resolving aliases to their canonical name.
    *
-   * @param checkType
-   *   The rule type (may be an alias).
-   * @return
-   *   The `SparkAnalyzer` that computes the rule's metric.
-   * @throws java.lang.IllegalArgumentException
-   *   if the `check_type` is not implemented in the Spark engine.
+   * @param checkType The rule type (may be an alias).
+   * @return the `SparkAnalyzer` registered for the given check type
+   * @throws java.lang.IllegalArgumentException if the `check_type` is not implemented in the Spark engine.
    */
   def getAnalyzer(checkType: String): SparkAnalyzer =
     registry
@@ -96,12 +93,9 @@ object SparkRegistry {
   /**
    * Returns the constraint for a `check_type`, resolving aliases to their canonical name.
    *
-   * @param checkType
-   *   The rule type (may be an alias).
-   * @return
-   *   The `SparkConstraint` that turns the metric into a pass/fail result.
-   * @throws java.lang.IllegalArgumentException
-   *   if the `check_type` is not implemented.
+   * @param checkType The rule type (may be an alias).
+   * @return the `SparkConstraint` registered for the given check type
+   * @throws java.lang.IllegalArgumentException if the `check_type` is not implemented.
    */
   def getConstraint(checkType: String): SparkConstraint =
     registry
@@ -116,8 +110,7 @@ object SparkRegistry {
   /**
    * All canonical `check_type`s implemented in the Spark engine, sorted.
    *
-   * @return
-   *   The sorted list of registered rule names.
+   * @return The sorted list of registered rule names.
    */
   def listImplemented(): List[String] = registry.keys.toList.sorted
 }

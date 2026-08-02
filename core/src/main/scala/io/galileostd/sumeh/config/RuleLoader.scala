@@ -26,12 +26,9 @@ object RuleLoader {
    * the lossless tagged format (e.g. `LongValue(42)`) from [[toCsv]]. Missing columns — including a CSV written before
    * `tolerance` existed — fall back to `RuleDefinition`'s defaults.
    *
-   * @param csv
-   *   The raw CSV text, with or without a trailing newline.
-   * @return
-   *   The parsed rules; an empty list for an empty or header-only input.
-   * @throws io.galileostd.sumeh.exception.SumehException
-   *   if a row has an unknown or missing `check_type`.
+   * @param csv The raw CSV text, with or without a trailing newline.
+   * @return The parsed rules; an empty list for an empty or header-only input.
+   * @throws io.galileostd.sumeh.exception.SumehException if a row has an unknown or missing `check_type`.
    */
   def fromCsvString(csv: String): List[RuleDefinition] = {
     val lines = csv.linesIterator.toList
@@ -55,12 +52,9 @@ object RuleLoader {
    * `jsonValueToString` before going through [[io.galileostd.sumeh.rule.RuleDefinition.fromMap]], so a JSON `value` of
    * `[18, 65]` becomes the list-string `"[18,65]"` and is re-parsed by `parseValue`.
    *
-   * @param json
-   *   The raw JSON text.
-   * @return
-   *   The parsed rules; an empty list for null/empty input or non-object JSON.
-   * @throws io.galileostd.sumeh.exception.SumehException
-   *   if a rule has an unknown or missing `check_type`.
+   * @param json The raw JSON text.
+   * @return The parsed rules; an empty list for null/empty input or non-object JSON.
+   * @throws io.galileostd.sumeh.exception.SumehException if a rule has an unknown or missing `check_type`.
    */
   def fromJsonString(json: String): List[RuleDefinition] = {
     import upickle.default._
@@ -92,10 +86,8 @@ object RuleLoader {
    * Writes a header row followed by one line per rule. `value` uses the lossless tagged `RuleValue.toTaggedString`
    * format so numbers, booleans, and dates survive the round-trip through [[fromCsvString]].
    *
-   * @param rules
-   *   The rules to serialize.
-   * @return
-   *   A CSV string with a header row.
+   * @param rules The rules to serialize.
+   * @return A CSV string with a header row.
    */
   def toCsv(rules: List[RuleDefinition]): String = {
     val header = "field,check_type,value,threshold,tolerance,execute,level,category"
@@ -128,10 +120,8 @@ object RuleLoader {
    * (in its native JSON form), `updated_at`, and any `metadata` keys. Note: `value` and metadata are stringified, so
    * this is a lossless-but-not-typed export.
    *
-   * @param rules
-   *   The rules to serialize.
-   * @return
-   *   A JSON array string.
+   * @param rules The rules to serialize.
+   * @return A JSON array string.
    */
   def toJson(rules: List[RuleDefinition]): String = {
     val arr = rules.map {
@@ -148,7 +138,7 @@ object RuleLoader {
           r.value.map(v => "value" -> ruleValueToJson(v)).toMap ++
           r.updatedAt.map(dt => "updated_at" -> ujson.Str(dt.toString)).toMap
 
-        // Metadata: converte Any pra string
+        // Metadata: convert Any to string
         val metadataJson = r.metadata.map {
           case (k, v) =>
             k -> ujson.Str(v.toString)
@@ -172,13 +162,9 @@ object RuleLoader {
    * function ever sees a line, so a newline inside a quoted field breaks the record in two. Whitespace around unquoted
    * fields is trimmed.
    *
-   * @param line
-   *   The raw line.
-   * @return
-   *   The parsed field values, in order.
-   * @throws io.galileostd.sumeh.exception.SumehException
-   *   if the line ends with an unterminated quote — the signal that a quoted field's newline was split across physical
-   *   lines.
+   * @param line The raw line.
+   * @return The parsed field values, in order.
+   * @throws io.galileostd.sumeh.exception.SumehException if a quoted field has no closing quote (multi-line CSV cell)
    */
   private def parseCsvLine(line: String): List[String] = {
     val result  = scala.collection.mutable.ListBuffer[String]()
@@ -235,10 +221,8 @@ object RuleLoader {
    * A field is wrapped in double quotes (with internal quotes doubled) when it contains a comma, a quote, or a newline;
    * otherwise it is returned unchanged.
    *
-   * @param field
-   *   The raw field value.
-   * @return
-   *   The field, quoted if necessary.
+   * @param field The raw field value.
+   * @return The field, quoted if necessary.
    */
   private def quoteCsv(field: String): String = {
     val needsQuoting = field.contains(",") || field.contains("\"") || field.contains("\n")
@@ -258,10 +242,8 @@ object RuleLoader {
    * Numbers are rendered as integers when whole (e.g. `42` instead of `42.0`). Arrays and objects are flattened to the
    * compact `"[a,b]"` / `"{k:v}"` forms that `parseField`/`parseValue` understand.
    *
-   * @param v
-   *   The JSON value.
-   * @return
-   *   Its string representation.
+   * @param v The JSON value.
+   * @return Its string representation.
    */
   private def jsonValueToString(v: ujson.Value): String = v match {
     case ujson.Str(s)   => s
@@ -278,10 +260,8 @@ object RuleLoader {
    * Dates/timestamps become strings, lists become arrays, and numerics stay numeric — the inverse of
    * [[io.galileostd.sumeh.rule.RuleDefinition.parseValue]].
    *
-   * @param v
-   *   The rule value.
-   * @return
-   *   The corresponding ujson value.
+   * @param v The rule value.
+   * @return The corresponding ujson value.
    */
   private def ruleValueToJson(v: io.galileostd.sumeh.rule.RuleValue): ujson.Value = v match {
     case io.galileostd.sumeh.rule.StringValue(s)    => ujson.Str(s)
