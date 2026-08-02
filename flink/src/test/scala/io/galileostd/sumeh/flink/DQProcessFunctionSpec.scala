@@ -405,4 +405,52 @@ class DQProcessFunctionSpec extends AnyWordSpec with Matchers {
       errors should have size 1
     }
   }
+
+  "CR-28 semantic parity" should {
+
+    "evaluate date-now rules against UTC (not JVM default TZ)" in {
+      val default = java.util.TimeZone.getDefault
+      try {
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("America/Sao_Paulo"))
+        val tomorrow    = java.time.LocalDate.now(java.time.ZoneOffset.UTC).plusDays(1)
+        val rules       = Seq(RuleDefinition.validated(Left("dt"), "is_today"))
+        val todayUtc    = java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString
+        val (errors, _) = evaluate(base + ("dt" -> todayUtc), rules)
+        errors shouldBe empty
+      } finally java.util.TimeZone.setDefault(default)
+    }
+
+    "accept timestamp-formatted date strings without error" in {
+      val rules = Seq(RuleDefinition.validated(Left("dt"), "is_past_date"))
+      noException should be thrownBy evaluate(base + ("dt" -> "2020-01-01 10:30:00"), rules)
+      val (errors, _) = evaluate(base + ("dt" -> "2020-01-01 10:30:00"), rules)
+      errors shouldBe empty // it parsed, past date → pass
+    }
+
+    "mull LocalDate value through toDate unchanged" in {
+      val ld          = java.time.LocalDate.of(2020, 1, 1)
+      val rules       = Seq(RuleDefinition.validated(Left("dt"), "is_past_date"))
+      val (errors, _) = evaluate(base + ("dt" -> ld), rules)
+      errors shouldBe empty
+    }
+
+    "treat numeric representations as equal in is_equal_than" in {
+      val rules = Seq(
+        RuleDefinition.validated(Left("age"), "is_equal_than", value = Some("other_col"))
+      )
+      val values      = Map("age" -> 1.0, "other_col" -> 1)
+      val (errors, _) = evaluate(values, rules)
+      errors shouldBe empty
+    }
+
+    "return a non-empty skipped list when TABLE-level rules are present" in {
+      val rules = Seq(
+        RuleDefinition.validated(Left("age"), "is_complete"),
+        RuleDefinition.validated(Left("age"), "is_unique", level = Some("TABLE"))
+      )
+      val (_, skipped) = evaluate(base, rules)
+      skipped should not be empty
+      skipped.head should include("TABLE-level")
+    }
+  }
 }
