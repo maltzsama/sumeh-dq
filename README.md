@@ -253,7 +253,7 @@ A validation run produces a `ValidationReport`:
 
 - `report.passed / failed / errors / skipped` — bucket results by status.
 - `report.passRate` — passed ÷ evaluated (**skipped excluded**); `1.0` when nothing is evaluated.
-- `report.summary(maxSampleIds = 100)` — flat JSON-friendly map, includes per-rule status + sampled violating row IDs.
+- `report.summary()` — flat JSON-friendly map with per-rule status, pass rate, and fail count. Ready to drop into a sink or metrics endpoint.
 - `report.split()` — the Bifurcation: `(good, bad)` via the engine's `Splittable`.
 
 ### Row-level vs. Table-level
