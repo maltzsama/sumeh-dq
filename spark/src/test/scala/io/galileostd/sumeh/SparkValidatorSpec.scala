@@ -1539,4 +1539,39 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       report.failed should have size 1
     }
   }
+
+  "CR-29 alias resolution" should {
+
+    "resolve every manifest alias through the registry" in {
+      val df = spark.createDataFrame(
+        spark.sparkContext.parallelize(Seq(Row.apply("a"), Row.apply("b"))),
+        StructType(Seq(StructField("x", StringType, false)))
+      )
+      // is_in → is_contained_in
+      noException should be thrownBy SparkValidator.validate(
+        df,
+        Seq(RuleDefinition.validated(Left("x"), "is_in", value = Some(List("a", "b"))))
+      )
+      // not_in → not_contained_in
+      noException should be thrownBy SparkValidator.validate(
+        df,
+        Seq(RuleDefinition.validated(Left("x"), "not_in", value = Some(List("a", "b"))))
+      )
+      // is_yesterday → is_t_minus_1
+      noException should be thrownBy SparkValidator.validate(
+        df,
+        Seq(RuleDefinition.validated(Left("x"), "is_yesterday"))
+      )
+      // is_primary_key → is_unique
+      noException should be thrownBy SparkValidator.validate(
+        df,
+        Seq(RuleDefinition.validated(Left("x"), "is_primary_key"))
+      )
+      // is_composite_key → are_unique
+      noException should be thrownBy SparkValidator.validate(
+        df,
+        Seq(RuleDefinition.validated(Left("x"), "is_composite_key"))
+      )
+    }
+  }
 }
