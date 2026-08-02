@@ -109,9 +109,14 @@ final case class ValidationReport[DF](
    * Flat JSON-friendly map for dashboards / sinks / alerting.
    *
    * Includes run-level totals (`total_rows`, `passed`, `failed`, `errors`, `skipped`, `pass_rate`) and a per-rule
-   * `validations` list. The `result_id` field is the same value that appears in `_dq_errors[i].result_id`, allowing a
+   * `validations` list. The `rule_id` field is the same value that appears in `_dq_errors[i].rule_id`, allowing a
    * failing row to be correlated back to the validation that flagged it. `fail_count` comes from the rule's
    * `metadata("fail_count")` (populated by the engines).
+   *
+   * Note: unlike the Python implementation, the JVM report does not expose individual violating row ids. Materialising
+   * them would require collecting every id to the driver per rule, which breaks the single-pass model. Use the `bad`
+   * DataFrame from `split()` to inspect the rows, and `fail_count` for the count — which is the same number as
+   * `len(violating_row_ids)` on the Python side.
    *
    * Returns: A serializable map describing the run.
    */
@@ -129,7 +134,7 @@ final case class ValidationReport[DF](
     "validations" -> results.map {
       r =>
         Map(
-          "result_id"  -> r.id,
+          "rule_id"    -> r.id,
           "check_type" -> r.checkType,
           "field"      -> r.fieldName,
           "category"   -> r.category,

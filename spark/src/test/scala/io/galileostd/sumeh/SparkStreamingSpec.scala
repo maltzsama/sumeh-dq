@@ -206,7 +206,7 @@ class SparkStreamingSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       val out = spark.sql("select * from dq_corr")
       val bad = out.filter(F.size(F.col("_dq_errors")) > 0)
       val idOnRow = bad
-        .select(F.col("_dq_errors")(0)("result_id"))
+        .select(F.col("_dq_errors")(0)("rule_id"))
         .collect()(0)
         .getString(0)
 

@@ -12,13 +12,13 @@ import io.galileostd.sumeh.rule.RuleValue
  * and a human-readable message, so downstream consumers (dashboards, alerting, sinks) can act on it without re-deriving
  * the comparison.
  *
- * Args: id: Unique identifier of this validation result, generated once per execution. This is the same value that
- * appears in `_dq_errors[i].result_id`, and it is how a failing row is correlated back to the validation that flagged
- * it. Not stable across executions. timestamp: When the validation ran. level: ROW or TABLE. category: The rule
- * category (e.g. `"completeness"`, `"uniqueness"`). checkType: The rule type (e.g. `"is_complete"`). field: Column
- * name(s) validated. status: PASS, FAIL, ERROR, or SKIPPED. passRate: Percentage of rows that passed (row-level rules
- * only). expectedValue: What the rule expected. actualValue: What was actually measured. message: Human-readable
- * explanation (e.g. why a rule failed). metadata: Extra context from the metric.
+ * Args: id: Unique identifier for the result, generated once per execution. This is the value that appears in
+ * `_dq_errors[i].rule_id` and in `summary()("validations")(i)("rule_id")` — it is how a failing row is correlated back
+ * to the validation that flagged it. Not stable across executions; do not use as a time-series key. category (e.g.
+ * `"completeness"`, `"uniqueness"`). checkType: The rule type (e.g. `"is_complete"`). field: Column name(s) validated.
+ * status: PASS, FAIL, ERROR, or SKIPPED. passRate: Percentage of rows that passed (row-level rules only).
+ * expectedValue: What the rule expected. actualValue: What was actually measured. message: Human-readable explanation
+ * (e.g. why a rule failed). metadata: Extra context from the metric.
  */
 final case class ValidationResult(
     id: String = UUID.randomUUID().toString,

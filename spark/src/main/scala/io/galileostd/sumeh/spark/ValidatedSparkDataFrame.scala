@@ -6,11 +6,10 @@ import org.apache.spark.sql.{ functions => F, DataFrame }
 /**
  * DataFrame annotated with quality columns by [[io.galileostd.sumeh.spark.SparkValidator]].
  *
- *   - `_dq_errors`: `array<struct<result_id, check_type, field, category, message, expected, actual>>`. Empty for rows
- *     with no violation. The `result_id` field matches the `result_id` in
- *     [[io.galileostd.sumeh.validation.ValidationResult.id]] and
+ *   - `_dq_errors`: `array<struct<rule_id, check_type, field, category, expected, actual, message, timestamp>>`. Empty
+ *     for rows with no violation. The `rule_id` field matches the same field in
  *     [[io.galileostd.sumeh.validation.ValidationReport.summary]], so a failing row can be correlated back to the
- *     validation that flagged it.
+ *     validation that flagged it. Field names and order match the Python implementation.
  *   - `_dq_skipped`: a string with `checkType:reason` entries for every skipped rule, separated by `|`. This is a
  *     run-level property — the value is the same in every row.
  *

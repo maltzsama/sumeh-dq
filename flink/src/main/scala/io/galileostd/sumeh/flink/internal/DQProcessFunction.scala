@@ -86,13 +86,14 @@ private[flink] class DQProcessFunction(
  * uniformly via `from_json`.
  */
 final private[flink] case class DQError(
-    result_id: String,
+    rule_id: String,
     check_type: String,
     field: String,
     category: String,
-    message: Option[String] = None,
     expected: Option[String] = None,
-    actual: Option[String] = None
+    actual: Option[String] = None,
+    message: Option[String] = None,
+    timestamp: String
 )
 
 /**
@@ -188,13 +189,14 @@ private[flink] object DQProcessFunction {
 
   private def errorToJson(e: DQError): ujson.Obj =
     ujson.Obj(
-      "result_id"  -> ujson.Str(e.result_id),
+      "rule_id"    -> ujson.Str(e.rule_id),
       "check_type" -> ujson.Str(e.check_type),
       "field"      -> ujson.Str(e.field),
       "category"   -> ujson.Str(e.category),
-      "message"    -> e.message.map(ujson.Str(_)).getOrElse(ujson.Null),
       "expected"   -> e.expected.map(ujson.Str(_)).getOrElse(ujson.Null),
-      "actual"     -> e.actual.map(ujson.Str(_)).getOrElse(ujson.Null)
+      "actual"     -> e.actual.map(ujson.Str(_)).getOrElse(ujson.Null),
+      "message"    -> e.message.map(ujson.Str(_)).getOrElse(ujson.Null),
+      "timestamp"  -> ujson.Str(e.timestamp)
     )
 
   // -------------------------------------------------------------------------
@@ -386,12 +388,13 @@ private[flink] object DQProcessFunction {
    */
   private def buildError(rule: RuleDefinition, message: Option[String] = None): DQError =
     DQError(
-      result_id = java.util.UUID.randomUUID().toString,
+      rule_id = java.util.UUID.randomUUID().toString,
       check_type = rule.checkType,
       field = rule.fieldName,
       category = rule.category,
       message = message.orElse(Some(s"${rule.checkType}:${rule.fieldName}")),
-      expected = rule.value.map(_.toString)
+      expected = rule.value.map(_.toString),
+      timestamp = java.time.LocalDateTime.now(java.time.ZoneOffset.UTC).toString
     )
 
   /**

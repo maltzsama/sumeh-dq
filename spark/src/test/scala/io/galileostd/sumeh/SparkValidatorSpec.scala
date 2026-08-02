@@ -1230,13 +1230,14 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       val expected = ArrayType(
         StructType(
           Seq(
-            StructField("result_id", StringType, nullable = true),
+            StructField("rule_id", StringType, nullable = true),
             StructField("check_type", StringType, nullable = true),
             StructField("field", StringType, nullable = true),
             StructField("category", StringType, nullable = true),
-            StructField("message", StringType, nullable = true),
             StructField("expected", StringType, nullable = true),
-            StructField("actual", StringType, nullable = true)
+            StructField("actual", StringType, nullable = true),
+            StructField("message", StringType, nullable = true),
+            StructField("timestamp", StringType, nullable = true)
           )
         )
       )
@@ -1411,16 +1412,27 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
   "Result identity" should {
 
     "correlate a failing row with the result that flagged it" in {
-      val rules    = Seq(RuleDefinition.validated(Left("name"), "is_complete", threshold = 1.0))
-      val report   = SparkValidator.validate(dfBasic, rules)
+      val rules = Seq(RuleDefinition.validated(Left("name"), "is_complete", threshold = 1.0))
+      val report = SparkValidator.validate(dfBasic, rules)
       val (_, bad) = report.dfValidated.get.splitByErrors()
 
       val idOnRow = bad
-        .select(F.col("_dq_errors")(0)("result_id"))
+        .select(F.col("_dq_errors")(0)("rule_id"))
         .collect()(0)
         .getString(0)
 
       report.results.map(_.id).toSet should contain(idOnRow)
+    }
+
+    "expose _dq_errors with the eight fields in contract order" in {
+      val rules  = Seq(RuleDefinition.validated(Left("name"), "is_complete", threshold = 1.0))
+      val report = SparkValidator.validate(dfBasic, rules)
+      val struct = report.dfValidated.get.toNative.schema("_dq_errors").dataType
+        .asInstanceOf[ArrayType].elementType.asInstanceOf[StructType]
+
+      struct.fieldNames.toList shouldBe List(
+        "rule_id", "check_type", "field", "category", "expected", "actual", "message", "timestamp"
+      )
     }
   }
 }

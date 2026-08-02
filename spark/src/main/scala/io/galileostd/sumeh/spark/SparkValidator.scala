@@ -25,18 +25,20 @@ object SparkValidator {
   /**
    * Schema of the `_dq_errors` struct attached to each validated row.
    *
-   * One struct entry per failing rule with `result_id` and `check_type` fields.
+   * One struct entry per failing rule. Field names and order match the Python implementation so cross-language
+   * consumers see the same contract.
    */
   private val errorSchema = ArrayType(
     StructType(
       Seq(
-        StructField("result_id", StringType, nullable = true),
+        StructField("rule_id", StringType, nullable = true),
         StructField("check_type", StringType, nullable = true),
         StructField("field", StringType, nullable = true),
         StructField("category", StringType, nullable = true),
-        StructField("message", StringType, nullable = true),
         StructField("expected", StringType, nullable = true),
-        StructField("actual", StringType, nullable = true)
+        StructField("actual", StringType, nullable = true),
+        StructField("message", StringType, nullable = true),
+        StructField("timestamp", StringType, nullable = true)
       )
     )
   )
@@ -114,9 +116,10 @@ object SparkValidator {
    * Note: the order of `report.results` is NOT the input rule order. In batch it is simple ROW rules (in input order),
    * then uniqueness rules, then TABLE rules — do not rely on `rules.zip(report.results)`.
    *
-   * Note: `_dq_errors` is an `array<struct<result_id, check_type, field, category, message, expected, actual>>` in
-   * Spark, but a JSON string carrying the same fields in the Flink engine. `_dq_skipped` is a `checkType:reason` string
-   * with `|` separators in both engines. Cross-engine sinks must handle the two `_dq_errors` shapes.
+   * Note: `_dq_errors` is an `array<struct<rule_id, check_type, field, category, expected, actual, message,
+   * timestamp>>` Spark, but a JSON string carrying the same fields in the Flink engine. `_dq_skipped` is a
+   * `checkType:reason` string with `|` separators in both engines. Cross-engine sinks must handle the two `_dq_errors`
+   * shapes.
    *
    * Args: df: The DataFrame to validate (batch or streaming). rules: The rules to run.
    *
@@ -342,16 +345,7 @@ object SparkValidator {
         case None =>
           try {
             val sResult = streamingResult(rule)
-            val errorStruct = F.struct(
-              F.lit(sResult.id).cast(StringType).alias("result_id"),
-              F.lit(rule.checkType).cast(StringType).alias("check_type"),
-              F.lit(rule.fieldName).cast(StringType).alias("field"),
-              F.lit(rule.category).cast(StringType).alias("category"),
-              F.lit(null: String).cast(StringType).alias("message"),
-              F.lit(rule.value.map(_.toString).orNull).cast(StringType).alias("expected"),
-              F.lit(null: String).cast(StringType).alias("actual")
-            )
-            errorEntries += F.when(FailCondition(rule), errorStruct)
+            errorEntries += F.when(FailCondition(rule), errorStruct(rule, sResult))
             results += sResult
           } catch {
             case e: Exception =>
@@ -508,13 +502,14 @@ object SparkValidator {
    */
   private def errorStruct(rule: RuleDefinition, result: ValidationResult): Column =
     F.struct(
-      F.lit(result.id).cast(StringType).alias("result_id"),
+      F.lit(result.id).cast(StringType).alias("rule_id"),
       F.lit(rule.checkType).cast(StringType).alias("check_type"),
       F.lit(rule.fieldName).cast(StringType).alias("field"),
       F.lit(rule.category).cast(StringType).alias("category"),
-      F.lit(result.message.orNull).cast(StringType).alias("message"),
       F.lit(result.expectedValue.map(_.toString).orNull).cast(StringType).alias("expected"),
-      F.lit(result.actualValue.map(_.toString).orNull).cast(StringType).alias("actual")
+      F.lit(result.actualValue.map(_.toString).orNull).cast(StringType).alias("actual"),
+      F.lit(result.message.orNull).cast(StringType).alias("message"),
+      F.lit(result.timestamp.toString).cast(StringType).alias("timestamp")
     )
 
   /**
