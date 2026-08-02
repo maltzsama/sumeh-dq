@@ -450,8 +450,6 @@ object RuleValue {
 
   /** Build a ListValue from mixed plain values: `RuleValue.of(18, "active")`. Each argument converts individually. */
   def of(values: RuleValue*): RuleValue = ListValue(values.toList)
-
-  implicit def toOption(v: RuleValue): Option[RuleValue] = Some(v)
 }
 
 /**
