@@ -207,7 +207,10 @@ object SparkProfiler {
       stat: String,
       row: org.apache.spark.sql.Row,
       index: scala.collection.Map[(String, String), Int]
-  ): Long = row.getAs[Long](index((field, stat)))
+  ): Long = {
+    val i = index((field, stat))
+    if (row.isNullAt(i)) 0L else row.getLong(i)
+  }
 
   /**
    * Reads an optional double statistic, returning `None` when the aggregation was null.
