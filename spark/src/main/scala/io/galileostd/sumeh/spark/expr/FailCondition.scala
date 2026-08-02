@@ -18,6 +18,9 @@ private[spark] object FailCondition {
    * Each case yields a Boolean column that is `true` exactly when the row violates the rule. Uniqueness checks use a
    * windowed count; `validate_schema` is not covered (TABLE-level, never reaches this path).
    *
+   * Trust boundary: the `satisfies` case compiles the rule's `value` as Spark SQL via `F.expr`, so that value is
+   * executed during validation. Only pass rules from sources you trust (your own config, not end-user input).
+   *
    * Args: rule: The rule whose violation is tested.
    *
    * Returns: A Boolean column — `true` when the row fails the rule.
