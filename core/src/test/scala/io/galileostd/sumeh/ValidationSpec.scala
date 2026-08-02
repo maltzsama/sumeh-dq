@@ -219,7 +219,7 @@ class ValidationSpec extends AnyWordSpec with Matchers {
       s("total_validations") shouldBe 3
     }
 
-    "gerar timestamps em UTC" in {
+    "generate timestamps in UTC" in {
       val antes  = java.time.LocalDateTime.now(java.time.ZoneOffset.UTC)
       val r      = ValidationResult()
       val depois = java.time.LocalDateTime.now(java.time.ZoneOffset.UTC)
