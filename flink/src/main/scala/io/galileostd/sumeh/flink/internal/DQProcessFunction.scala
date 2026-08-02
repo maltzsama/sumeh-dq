@@ -118,7 +118,10 @@ private[flink] class DQProcessFunction(
     val values = fieldNames.indices.map(i => fieldNames(i) -> row.getField(i)).toMap
 
     val (errors, _) = DQProcessFunction.evaluateExecutable(
-      values, executableRules, patternCache, dateFormatCache
+      values,
+      executableRules,
+      patternCache,
+      dateFormatCache
     )
 
     val enriched = new Row(fieldNames.length + 2)
