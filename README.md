@@ -214,9 +214,9 @@ val back  = RuleLoader.toJson(rules)          // round-trip to JSON
 ### CSV
 
 ```csv
-field,check_type,value,threshold,execute,level,category
-email,is_complete,,1.0,true,ROW,completeness
-age,is_between,"ListValue([LongValue(18),LongValue(65)])",1.0,true,ROW,comparison
+field,check_type,value,threshold,tolerance,execute,level,category
+email,is_complete,,1.0,1e-9,true,ROW,completeness
+age,is_between,"ListValue([LongValue(18),LongValue(65)])",1.0,1e-9,true,ROW,comparison
 ```
 
 `RuleLoader.fromCsvString(csv)` / `toCsv(rules)` — values use a lossless tagged format that round-trips through the `RuleValue` ADT.
