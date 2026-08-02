@@ -194,7 +194,14 @@ class FlinkValidatorSpec extends AnyWordSpec with Matchers {
       val obj = ujson.read(row.getField(idx).toString).arr.head.obj
 
       obj.keys.toList shouldBe List(
-        "rule_id", "check_type", "field", "category", "expected", "actual", "message", "timestamp"
+        "rule_id",
+        "check_type",
+        "field",
+        "category",
+        "expected",
+        "actual",
+        "message",
+        "timestamp"
       )
     }
 

@@ -1412,8 +1412,8 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
   "Result identity" should {
 
     "correlate a failing row with the result that flagged it" in {
-      val rules = Seq(RuleDefinition.validated(Left("name"), "is_complete", threshold = 1.0))
-      val report = SparkValidator.validate(dfBasic, rules)
+      val rules    = Seq(RuleDefinition.validated(Left("name"), "is_complete", threshold = 1.0))
+      val report   = SparkValidator.validate(dfBasic, rules)
       val (_, bad) = report.dfValidated.get.splitByErrors()
 
       val idOnRow = bad
@@ -1427,11 +1427,22 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
     "expose _dq_errors with the eight fields in contract order" in {
       val rules  = Seq(RuleDefinition.validated(Left("name"), "is_complete", threshold = 1.0))
       val report = SparkValidator.validate(dfBasic, rules)
-      val struct = report.dfValidated.get.toNative.schema("_dq_errors").dataType
-        .asInstanceOf[ArrayType].elementType.asInstanceOf[StructType]
+      val struct = report.dfValidated.get.toNative
+        .schema("_dq_errors")
+        .dataType
+        .asInstanceOf[ArrayType]
+        .elementType
+        .asInstanceOf[StructType]
 
       struct.fieldNames.toList shouldBe List(
-        "rule_id", "check_type", "field", "category", "expected", "actual", "message", "timestamp"
+        "rule_id",
+        "check_type",
+        "field",
+        "category",
+        "expected",
+        "actual",
+        "message",
+        "timestamp"
       )
     }
 
@@ -1449,19 +1460,19 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
     }
 
     "write the expected value into the _dq_errors struct" in {
-      val rule   = RuleDefinition.validated(Left("name"), "is_complete", threshold = 1.0)
-      val report = SparkValidator.validate(dfBasic, Seq(rule))
+      val rule     = RuleDefinition.validated(Left("name"), "is_complete", threshold = 1.0)
+      val report   = SparkValidator.validate(dfBasic, Seq(rule))
       val (_, bad) = report.dfValidated.get.splitByErrors()
-      val e = bad.select(F.col("_dq_errors")(0).alias("e")).collect()(0).getStruct(0)
+      val e        = bad.select(F.col("_dq_errors")(0).alias("e")).collect()(0).getStruct(0)
       e.getAs[String]("expected") shouldBe "1.0"
     }
 
     "write the correct value into every field of the struct" in {
-      val rule   = RuleDefinition.validated(Left("name"), "is_complete", threshold = 1.0)
-      val report = SparkValidator.validate(dfBasic, Seq(rule))
-      val result = report.results.head
+      val rule     = RuleDefinition.validated(Left("name"), "is_complete", threshold = 1.0)
+      val report   = SparkValidator.validate(dfBasic, Seq(rule))
+      val result   = report.results.head
       val (_, bad) = report.dfValidated.get.splitByErrors()
-      val e       = bad.select(F.col("_dq_errors")(0).alias("e")).collect()(0).getStruct(0)
+      val e        = bad.select(F.col("_dq_errors")(0).alias("e")).collect()(0).getStruct(0)
 
       e.getAs[String]("rule_id") shouldBe result.id
       e.getAs[String]("check_type") shouldBe "is_complete"
