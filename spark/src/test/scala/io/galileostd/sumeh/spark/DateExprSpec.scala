@@ -52,10 +52,11 @@ class DateExprSpec extends AnyWordSpec with Matchers with BeforeAndAfterAll {
       val prev = spark.conf.getOption("spark.sql.ansi.enabled")
       spark.conf.set("spark.sql.ansi.enabled", "true")
       try noException should be thrownBy eval("31/12/2026")
-      finally prev match {
-        case Some(v) => spark.conf.set("spark.sql.ansi.enabled", v)
-        case None    => spark.conf.unset("spark.sql.ansi.enabled")
-      }
+      finally
+        prev match {
+          case Some(v) => spark.conf.set("spark.sql.ansi.enabled", v)
+          case None    => spark.conf.unset("spark.sql.ansi.enabled")
+        }
     }
   }
 }
