@@ -3,6 +3,7 @@ package io.galileostd.sumeh.spark.analyzer
 import io.galileostd.sumeh.rule.RuleDefinition
 import org.apache.spark.sql.{ DataFrame, Row, SparkSession }
 import org.apache.spark.sql.types._
+import org.apache.spark.SparkListenerBusTestSupport
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 import org.scalatest.BeforeAndAfterAll
@@ -54,9 +55,13 @@ class UniquenessAnalyzerSpec extends AnyWordSpec with Matchers with BeforeAndAft
       spark.sparkContext.addSparkListener(counter)
       try {
         df.count()
+        SparkListenerBusTestSupport.waitUntilEmpty(spark.sparkContext, 10000)
         val baselineJobs = counter.jobs
+
         counter.jobs = 0
         UniquenessAnalyzer.analyze(df, RuleDefinition.validated(Left("id"), "is_unique"))
+        SparkListenerBusTestSupport.waitUntilEmpty(spark.sparkContext, 10000)
+
         counter.jobs shouldBe baselineJobs
       } finally
         spark.sparkContext.removeSparkListener(counter)

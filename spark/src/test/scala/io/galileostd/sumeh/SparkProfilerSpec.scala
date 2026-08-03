@@ -3,6 +3,7 @@ package io.galileostd.sumeh
 import io.galileostd.sumeh.spark.SparkProfiler
 import org.apache.spark.sql.{ Row, SparkSession }
 import org.apache.spark.sql.types._
+import org.apache.spark.SparkListenerBusTestSupport
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 import org.scalatest.BeforeAndAfterAll
@@ -133,12 +134,15 @@ class SparkProfilerSpec extends AnyWordSpec with Matchers with BeforeAndAfterAll
       spark.sparkContext.addSparkListener(counter)
       try {
         SparkProfiler.profile(table(2)) // warm-up
+        SparkListenerBusTestSupport.waitUntilEmpty(spark.sparkContext, 10000)
         counter.jobs = 0
         SparkProfiler.profile(table(2))
+        SparkListenerBusTestSupport.waitUntilEmpty(spark.sparkContext, 10000)
         val jobsSmall = counter.jobs
 
         counter.jobs = 0
         SparkProfiler.profile(table(10))
+        SparkListenerBusTestSupport.waitUntilEmpty(spark.sparkContext, 10000)
         val jobsLarge = counter.jobs
 
         jobsSmall shouldBe jobsLarge

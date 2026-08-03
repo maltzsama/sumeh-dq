@@ -8,6 +8,7 @@ import io.galileostd.sumeh.spark.SparkValidator
 import io.galileostd.sumeh.validation.ValidationStatus
 import org.apache.spark.sql.{ functions => F, Row, SparkSession }
 import org.apache.spark.sql.types._
+import org.apache.spark.SparkListenerBusTestSupport
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 import org.scalatest.BeforeAndAfterAll
@@ -1212,11 +1213,13 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       try {
         val report5 = SparkValidator.validate(dfBasic, simpleRules(5))
         report5.results should have size 5
+        SparkListenerBusTestSupport.waitUntilEmpty(spark.sparkContext, 10000)
         val jobs5 = counter.jobs
 
         counter.jobs = 0
         val report20 = SparkValidator.validate(dfBasic, simpleRules(20))
         report20.results should have size 20
+        SparkListenerBusTestSupport.waitUntilEmpty(spark.sparkContext, 10000)
         val jobs20 = counter.jobs
 
         jobs5 shouldBe jobs20
@@ -1432,6 +1435,26 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
         ct =>
           if (RuleRegistry.getRule(ct).get.engines.contains("spark"))
             noException should be thrownBy SparkRegistry.getConstraint(ct)
+      }
+    }
+
+    // Mirrors the dispatch decision in SparkValidator.validateBatch (which rules
+    // keep a dedicated analyzer): uniqueness ROW rules plus every TABLE-level
+    // rule. If a new rule is added to the constraints map and the rule registry
+    // but its analyzer entry is forgotten, this test fails at the point where
+    // the runtime would throw "has no dedicated analyzer".
+    "provide an analyzer for every rule the validator dispatches to one" in {
+      import io.galileostd.sumeh.rule.RuleRegistry
+      import io.galileostd.sumeh.spark.registry.SparkRegistry
+      val needsAnalyzer = Set("is_unique", "are_unique")
+      RuleRegistry.listRules().foreach {
+        ct =>
+          val entry     = RuleRegistry.getRule(ct).get
+          val canonical = RuleRegistry.canonical(ct)
+          if (entry.engines.contains("spark") && (entry.level == "TABLE" || needsAnalyzer(canonical)))
+            withClue(s"check type '$ct' is dispatched to getAnalyzer but has no entry: ") {
+              noException should be thrownBy SparkRegistry.getAnalyzer(ct)
+            }
       }
     }
   }

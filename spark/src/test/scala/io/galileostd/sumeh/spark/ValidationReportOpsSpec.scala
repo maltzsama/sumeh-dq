@@ -102,5 +102,50 @@ class ValidationReportOpsSpec extends AnyWordSpec with Matchers with BeforeAndAf
       summaryCount shouldBe 3L
       dfCount shouldBe summaryCount
     }
+
+    "write run_timestamp as the report's UTC instant, regardless of driver timezone" in {
+      val original = java.util.TimeZone.getDefault
+      try {
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("America/Sao_Paulo"))
+        val report = ValidationReport[Unit](
+          List(someResult),
+          10,
+          1.0,
+          "spark",
+          timestamp = java.time.LocalDateTime.of(2026, 8, 3, 12, 0, 0)
+        )
+        val got = report.toDataFrame.select("run_timestamp").collect()(0).getTimestamp(0)
+        got.toInstant shouldBe java.time.Instant.parse("2026-08-03T12:00:00Z")
+      } finally java.util.TimeZone.setDefault(original)
+    }
+
+    "report the same fail_count in summary() and toDataFrame" in {
+      val withCount = ValidationResult(
+        checkType = "is_complete",
+        field = Left("email"),
+        status = ValidationStatus.FAIL,
+        metadata = Map("fail_count" -> 3L)
+      )
+      val withoutCount = ValidationResult(
+        checkType = "validate_schema",
+        field = Left("*"),
+        status = ValidationStatus.PASS
+      )
+      val report = ValidationReport[Unit](List(withCount, withoutCount), 10, 1.0, "spark")
+
+      val summaryCounts = report
+        .summary()("validations")
+        .asInstanceOf[List[Map[String, Any]]]
+        .map(m => m("rule_id").toString -> Option(m("fail_count")).map(_.toString))
+        .toMap
+
+      val dfCounts = report.toDataFrame
+        .select("result_id", "fail_count")
+        .collect()
+        .map(r => r.getString(0) -> Option(r.get(1)).map(_.toString))
+        .toMap
+
+      dfCounts shouldBe summaryCounts
+    }
   }
 }

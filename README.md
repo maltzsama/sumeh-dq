@@ -205,6 +205,8 @@ report.toDataFrame
 
 The schema is a data contract — downstream tables and dashboards depend on it (`run_id`, `run_timestamp`, `engine`, `total_rows`, `execution_time_ms`, `result_id`, `check_type`, `field`, `category`, `level`, `status`, `pass_rate`, `expected`, `actual`, `fail_count`, `message`). All rows from one execution share the same `run_id`, so a run can be grouped and compared over time.
 
+`fail_count` is **nullable**: it is the rule's reported violation count, and `null` when the metric carries no count (e.g. `validate_schema`, which has no row-level failure). `null` means "no count reported", distinct from `0` ("reported zero violations") — the same goes for `summary()`'s per-rule `fail_count`.
+
 This unlocks a per-rule pass-rate time series, trend alerting, and a quality dashboard without writing a JSON parser. `run_id` is generated per report; use `report.copy(runId = "...")` to tie rows to your orchestrator's job id.
 
 `toDataFrame` is a Spark-batch capability: in streaming the quality record is the `_dq_errors` column on the stream itself, since there is no finite pass rate. The Flink engine has no equivalent and intentionally does not invent one.
@@ -277,7 +279,7 @@ A validation run produces a `ValidationReport`:
 
 - `report.passed / failed / errors / skipped` — bucket results by status.
 - `report.passRate` — passed ÷ evaluated (**skipped excluded**); `1.0` when nothing is evaluated.
-- `report.summary()` — flat JSON-friendly map with per-rule status, pass rate, and fail count. Ready to drop into a sink or metrics endpoint.
+- `report.summary()` — flat JSON-friendly map with per-rule status, pass rate, and fail count. Ready to drop into a sink or metrics endpoint. `fail_count` is `null` when the rule reports no count (distinct from a measured `0`).
 - `report.split()` — the Bifurcation: `(good, bad)` via the engine's `Splittable`.
 
 ### Row-level vs. Table-level

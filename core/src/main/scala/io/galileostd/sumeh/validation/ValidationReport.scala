@@ -119,7 +119,8 @@ final case class ValidationReport[DF](
    * Includes run-level totals (`total_rows`, `passed`, `failed`, `errors`, `skipped`, `pass_rate`) and a per-rule
    * `validations` list. The `rule_id` field is the same value that appears in `_dq_errors[i].rule_id`, allowing a
    * failing row to be correlated back to the validation that flagged it. `fail_count` comes from the rule's
-   * `metadata("fail_count")` (populated by the engines).
+   * `metadata("fail_count")` (populated by the engines); it is `null` when the metric reported no violation count
+   * (e.g. `validate_schema`), mirroring the `fail_count` column of `toDataFrame`.
    *
    * Note: unlike the Python implementation, the JVM report does not expose individual violating row ids. Materialising
    * them would require collecting every id to the driver per rule, which breaks the single-pass model. Use the `bad`
@@ -152,7 +153,7 @@ final case class ValidationReport[DF](
           "expected"   -> r.expectedValue.map(java.lang.Double.valueOf(_)).orNull,
           "actual"     -> r.actualValue.map(java.lang.Double.valueOf(_)).orNull,
           "message"    -> r.message.orNull,
-          "fail_count" -> r.failCount.getOrElse(0L)
+          "fail_count" -> r.failCount.map(java.lang.Long.valueOf(_)).orNull
         )
     }
   )

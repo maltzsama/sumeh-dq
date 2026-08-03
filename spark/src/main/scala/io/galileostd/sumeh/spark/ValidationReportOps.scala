@@ -54,7 +54,7 @@ object ValidationReportOps {
     def toDataFrame(
         implicit spark: SparkSession
     ): DataFrame = {
-      val ts = java.sql.Timestamp.valueOf(report.timestamp)
+      val ts = java.sql.Timestamp.from(report.timestamp.toInstant(java.time.ZoneOffset.UTC))
       val rows = report.results.map {
         r =>
           Row(
