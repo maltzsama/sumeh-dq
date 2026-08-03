@@ -1150,6 +1150,18 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       report.results.head.status shouldBe ValidationStatus.PASS
     }
 
+    "not fail an empty DataFrame for a uniqueness rule" in {
+      val empty = spark.createDataFrame(
+        spark.sparkContext.emptyRDD[Row],
+        StructType(Seq(StructField("id", IntegerType, nullable = true)))
+      )
+      val rules  = Seq(RuleDefinition.validated(Left("id"), "is_unique", threshold = 1.0))
+      val report = SparkValidator.validate(empty, rules)
+      report.totalRows shouldBe 0L
+      report.results.head.status shouldBe ValidationStatus.PASS
+      report.results.head.passRate shouldBe Some(1.0)
+    }
+
     "produce ERROR for a missing field on a numeric rule" in {
       val rules  = Seq(RuleDefinition.validated(Left("missing"), "is_greater_than"))
       val report = SparkValidator.validate(dfBasic, rules)
@@ -1419,7 +1431,7 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       RuleRegistry.listRules().foreach {
         ct =>
           if (RuleRegistry.getRule(ct).get.engines.contains("spark"))
-            noException should be thrownBy SparkRegistry.getAnalyzer(ct)
+            noException should be thrownBy SparkRegistry.getConstraint(ct)
       }
     }
   }

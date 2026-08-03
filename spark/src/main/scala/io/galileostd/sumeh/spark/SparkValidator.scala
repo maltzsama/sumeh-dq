@@ -7,7 +7,7 @@ import io.galileostd.sumeh.rule.{ DoubleValue, ListValue, LongValue, RuleDefinit
 import io.galileostd.sumeh.spark.expr.FailCondition
 import io.galileostd.sumeh.spark.registry.SparkRegistry
 import io.galileostd.sumeh.validation.{ ValidationLevel, ValidationReport, ValidationResult, ValidationStatus }
-import org.apache.spark.sql.{ functions => F, Column, DataFrame, Row }
+import org.apache.spark.sql.{ functions => F, Column, DataFrame }
 import org.apache.spark.sql.types.{ ArrayType, StringType, StructField, StructType }
 
 /**
@@ -201,26 +201,19 @@ object SparkValidator {
       }
 
     // One aggregation over the ORIGINAL df — never over an annotated intermediate.
-    val aggRow: Option[Row] =
-      if (counterCols.isEmpty) None
-      else {
-        val cols  = counterCols.zipWithIndex.map { case (col, i) => col.alias(s"_fail_$i") }
-        val total = F.count(F.lit(1)).alias("_total")
-        Some(df.agg(total, cols.toSeq: _*).collect()(0))
-      }
+    // Always runs: the `count(lit(1))` pays for totalRows in the same pass as the per-rule
+    // fail counters, and on its own it is exactly the scan `df.count()` used to pay —
+    // same cost, one less code path to maintain.
+    val cols   = counterCols.zipWithIndex.map { case (col, i) => col.alias(s"_fail_$i") }
+    val aggRow = df.agg(F.count(F.lit(1)).alias("_total"), cols.toSeq: _*).collect()(0)
 
-    val totalRows = aggRow.map(_.getAs[Long]("_total")).getOrElse(df.count())
+    val totalRows = aggRow.getAs[Long]("_total")
 
     // Metrics + constraints for the executable simple rules.
     val simpleResults = executable.zipWithIndex.map {
       case (rule, i) =>
-        val failCount = aggRow
-          .map {
-            r =>
-              val idx = r.fieldIndex(s"_fail_$i")
-              if (r.isNullAt(idx)) 0L else r.getLong(idx)
-          }
-          .getOrElse(0L)
+        val idx       = aggRow.fieldIndex(s"_fail_$i")
+        val failCount = if (aggRow.isNullAt(idx)) 0L else aggRow.getLong(idx)
         val metric = MetricResult(
           metricType = metricTypeFor.getOrElse(rule.checkType, rule.checkType),
           field = rule.field,
