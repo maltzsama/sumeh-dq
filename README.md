@@ -187,6 +187,28 @@ bad .map(...).sinkTo(badSink)
 
 Streaming is **stateless by design**: each row is evaluated independently. Stateful/TABLE rules are reported as `SKIPPED` with a reason instead of failing the pipeline.
 
+### 3. Persisting metrics (Spark batch)
+
+`report.toDataFrame` materializes a validation run as a DataFrame with a canonical schema — one row per validation result, run-level fields denormalized onto every row. Append it to a metrics table to build a time series of quality per rule:
+
+```scala
+import io.galileostd.sumeh.spark.ValidationReportOps._
+import org.apache.spark.sql.functions.col
+
+val report = SparkValidator.validate(df, rules)
+
+report.toDataFrame
+  .withColumn("dt", col("run_timestamp").cast("date"))
+  .write.mode("append").partitionBy("dt")
+  .parquet("s3://bucket/dq_metrics/")
+```
+
+The schema is a data contract — downstream tables and dashboards depend on it (`run_id`, `run_timestamp`, `engine`, `total_rows`, `execution_time_ms`, `result_id`, `check_type`, `field`, `category`, `level`, `status`, `pass_rate`, `expected`, `actual`, `fail_count`, `message`). All rows from one execution share the same `run_id`, so a run can be grouped and compared over time.
+
+This unlocks a per-rule pass-rate time series, trend alerting, and a quality dashboard without writing a JSON parser. `run_id` is generated per report; use `report.copy(runId = "...")` to tie rows to your orchestrator's job id.
+
+`toDataFrame` is a Spark-batch capability: in streaming the quality record is the `_dq_errors` column on the stream itself, since there is no finite pass rate. The Flink engine has no equivalent and intentionally does not invent one.
+
 ---
 
 ## Defining Rules

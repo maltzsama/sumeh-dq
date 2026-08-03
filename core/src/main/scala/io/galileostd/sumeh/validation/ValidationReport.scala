@@ -19,6 +19,10 @@ import io.galileostd.sumeh.engine.Splittable
  * @param timestamp When the report was generated.
  * @param dfValidated Engine-specific validated dataset wrapper, used by [[split]].
  * @param generatedSql SQL generated during validation, if applicable.
+ * @param runId identifier shared by every row this run produces in `toDataFrame`,
+ *              so results from one execution can be grouped in a metrics table.
+ *              Generated per report; override with `copy(runId = ...)` to tie it to
+ *              an orchestrator's job id.
  */
 final case class ValidationReport[DF](
     results: List[ValidationResult],
@@ -28,7 +32,8 @@ final case class ValidationReport[DF](
     errorMessage: Option[String] = None,
     timestamp: LocalDateTime = LocalDateTime.now(java.time.ZoneOffset.UTC),
     dfValidated: Option[DF] = None,
-    generatedSql: Option[String] = None
+    generatedSql: Option[String] = None,
+    runId: String = java.util.UUID.randomUUID().toString
 ) {
 
   /**
@@ -147,7 +152,7 @@ final case class ValidationReport[DF](
           "expected"   -> r.expectedValue.map(java.lang.Double.valueOf(_)).orNull,
           "actual"     -> r.actualValue.map(java.lang.Double.valueOf(_)).orNull,
           "message"    -> r.message.orNull,
-          "fail_count" -> failCountOf(r)
+          "fail_count" -> r.failCount.getOrElse(0L)
         )
     }
   )
@@ -173,21 +178,4 @@ final case class ValidationReport[DF](
    */
   override def toString: String =
     s"ValidationReport(${results.size} rules, ${failed.size} failed, pass_rate=${String.format(Locale.ROOT, "%.2f", Double.box(passRate))})"
-
-  /**
-   * Number of failing rows for a result, read from its metadata.
-   *
-   * Engines report the count under `fail_count` (most rules), `null_count`/`incomplete_count` (completeness rules), or
-   * `duplicate_count` (uniqueness rules); `0` when absent. A non-numeric value is tolerated and reported as `0` — this
-   * is a report field, not a quality decision, so it must never throw out of `summary()`.
-   *
-   * @param r The validation result.
-   * @return The failing-row count.
-   */
-  private def failCountOf(r: ValidationResult): Long =
-    Seq("fail_count", "null_count", "incomplete_count", "duplicate_count")
-      .flatMap(k => r.metadata.get(k))
-      .headOption
-      .flatMap(v => scala.util.Try(v.toString.toDouble.toLong).toOption)
-      .getOrElse(0L)
 }
