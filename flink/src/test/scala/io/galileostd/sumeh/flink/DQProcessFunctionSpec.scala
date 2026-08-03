@@ -383,4 +383,74 @@ class DQProcessFunctionSpec extends AnyWordSpec with Matchers {
       DQProcessFunction.errorsToJson(Nil) shouldBe "[]"
     }
   }
+
+  "RuleValue implicits" should {
+
+    "evaluate a rule built with plain types" in {
+      // No ListValue, LongValue, or StringValue imports needed
+      val rules = Seq(
+        RuleDefinition.validated(Left("age"), "is_between", value = Some(List(18, 65))),
+        RuleDefinition.validated(Left("status"), "is_contained_in", value = Some(List("active", "pending")))
+      )
+      val (errors, skipped) = evaluate(base, rules)
+      errors shouldBe empty
+      skipped shouldBe empty
+    }
+
+    "flag a value outside the plain-typed range" in {
+      val rules = Seq(
+        RuleDefinition.validated(Left("age"), "is_between", value = Some(List(40, 50)))
+      )
+      val (errors, _) = evaluate(base + ("age" -> 30), rules)
+      errors should have size 1
+    }
+  }
+
+  "CR-28 semantic parity" should {
+
+    "evaluate date-now rules against UTC (not JVM default TZ)" in {
+      val default = java.util.TimeZone.getDefault
+      try {
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("America/Sao_Paulo"))
+        val tomorrow    = java.time.LocalDate.now(java.time.ZoneOffset.UTC).plusDays(1)
+        val rules       = Seq(RuleDefinition.validated(Left("dt"), "is_today"))
+        val todayUtc    = java.time.LocalDate.now(java.time.ZoneOffset.UTC).toString
+        val (errors, _) = evaluate(base + ("dt" -> todayUtc), rules)
+        errors shouldBe empty
+      } finally java.util.TimeZone.setDefault(default)
+    }
+
+    "accept timestamp-formatted date strings without error" in {
+      val rules = Seq(RuleDefinition.validated(Left("dt"), "is_past_date"))
+      noException should be thrownBy evaluate(base + ("dt" -> "2020-01-01 10:30:00"), rules)
+      val (errors, _) = evaluate(base + ("dt" -> "2020-01-01 10:30:00"), rules)
+      errors shouldBe empty // it parsed, past date → pass
+    }
+
+    "mull LocalDate value through toDate unchanged" in {
+      val ld          = java.time.LocalDate.of(2020, 1, 1)
+      val rules       = Seq(RuleDefinition.validated(Left("dt"), "is_past_date"))
+      val (errors, _) = evaluate(base + ("dt" -> ld), rules)
+      errors shouldBe empty
+    }
+
+    "treat numeric representations as equal in is_equal_than" in {
+      val rules = Seq(
+        RuleDefinition.validated(Left("age"), "is_equal_than", value = Some("other_col"))
+      )
+      val values      = Map("age" -> 1.0, "other_col" -> 1)
+      val (errors, _) = evaluate(values, rules)
+      errors shouldBe empty
+    }
+
+    "return a non-empty skipped list when TABLE-level rules are present" in {
+      val rules = Seq(
+        RuleDefinition.validated(Left("age"), "is_complete"),
+        RuleDefinition.validated(Left("age"), "is_unique", level = Some("TABLE"))
+      )
+      val (_, skipped) = evaluate(base, rules)
+      skipped should not be empty
+      skipped.head should include("TABLE-level")
+    }
+  }
 }

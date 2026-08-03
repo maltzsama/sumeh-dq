@@ -46,6 +46,20 @@ final case class ValidationResult(
   def fieldName: String = field.fold(identity, _.mkString(","))
 
   /**
+   * Number of rows that violated this rule, read from the analyzer metadata.
+   *
+   * Engines report the count under `fail_count` (most rules), `null_count`/`incomplete_count` (completeness rules), or
+   * `duplicate_count` (uniqueness rules). A non-numeric value is tolerated and reported as `None`.
+   *
+   * @return the violation count, or `None` when the metric didn't report one
+   */
+  def failCount: Option[Long] =
+    Seq("fail_count", "null_count", "incomplete_count", "duplicate_count")
+      .flatMap(k => metadata.get(k))
+      .headOption
+      .flatMap(v => scala.util.Try(v.toString.toDouble.toLong).toOption)
+
+  /**
    * Compact rendering of the result outcome.
    *
    * @return a compact one-line summary: check-type, field, and status

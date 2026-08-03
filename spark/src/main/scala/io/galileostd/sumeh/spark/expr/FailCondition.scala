@@ -26,16 +26,17 @@ private[spark] object FailCondition {
    * @throws java.lang.IllegalArgumentException when no condition is defined for `rule.checkType`.
    */
   def apply(rule: RuleDefinition): Column = {
-    val field = rule.field.fold(identity, _.head)
+    val field     = rule.field.fold(identity, _.head)
+    val checkType = RuleRegistry.canonical(rule.checkType)
 
-    rule.checkType match {
+    checkType match {
       // ---- Completeness -------------------------------------------------------
       case "is_complete" | "are_complete" =>
         val fields = rule.field.fold(List(_), identity)
         fields.map(f => F.col(f).isNull).reduce(_ || _)
 
       // ---- Uniqueness (windowed — analyzers cannot use this in aggregation) ---
-      case "is_unique" | "are_unique" | "is_primary_key" | "is_composite_key" =>
+      case "is_unique" | "are_unique" =>
         val fields = rule.field.fold(List(_), identity)
         val w      = org.apache.spark.sql.expressions.Window.partitionBy(fields.map(F.col): _*)
         F.count(F.lit(1)).over(w) > 1
@@ -63,11 +64,11 @@ private[spark] object FailCondition {
         F.col(field) =!= F.col(other)
 
       // ---- Membership ---------------------------------------------------------
-      case "is_contained_in" | "is_in" =>
+      case "is_contained_in" =>
         val vals = requireList(rule, "is_contained_in requires a list of values").map(RuleValue.toAny)
         !F.col(field).isin(vals: _*)
 
-      case "not_contained_in" | "not_in" =>
+      case "not_contained_in" =>
         val vals = requireList(rule, "not_contained_in requires a list of values").map(RuleValue.toAny)
         F.col(field).isin(vals: _*)
 
@@ -78,22 +79,22 @@ private[spark] object FailCondition {
         F.col(field).isNull || (F.trim(F.col(field)) === "")
 
       // ---- Date ---------------------------------------------------------------
-      case "all_date_checks"               => F.col(field).isNotNull && DateExpr.safeToDate(F.col(field)).isNull
-      case "is_today"                      => DateExpr.safeToDate(F.col(field)) =!= F.current_date()
-      case "is_t_minus_1" | "is_yesterday" => DateExpr.safeToDate(F.col(field)) =!= F.date_sub(F.current_date(), 1)
-      case "is_t_minus_2"                  => DateExpr.safeToDate(F.col(field)) =!= F.date_sub(F.current_date(), 2)
-      case "is_t_minus_3"                  => DateExpr.safeToDate(F.col(field)) =!= F.date_sub(F.current_date(), 3)
-      case "is_past_date"                  => DateExpr.safeToDate(F.col(field)) >= F.current_date()
-      case "is_future_date"                => DateExpr.safeToDate(F.col(field)) <= F.current_date()
-      case "is_on_weekday"                 => F.dayofweek(DateExpr.safeToDate(F.col(field))).isin(1, 7)
-      case "is_on_weekend"                 => !F.dayofweek(DateExpr.safeToDate(F.col(field))).isin(1, 7)
-      case "is_on_monday"                  => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 2
-      case "is_on_tuesday"                 => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 3
-      case "is_on_wednesday"               => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 4
-      case "is_on_thursday"                => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 5
-      case "is_on_friday"                  => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 6
-      case "is_on_saturday"                => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 7
-      case "is_on_sunday"                  => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 1
+      case "all_date_checks" => F.col(field).isNotNull && DateExpr.safeToDate(F.col(field)).isNull
+      case "is_today"        => DateExpr.safeToDate(F.col(field)) =!= F.current_date()
+      case "is_t_minus_1"    => DateExpr.safeToDate(F.col(field)) =!= F.date_sub(F.current_date(), 1)
+      case "is_t_minus_2"    => DateExpr.safeToDate(F.col(field)) =!= F.date_sub(F.current_date(), 2)
+      case "is_t_minus_3"    => DateExpr.safeToDate(F.col(field)) =!= F.date_sub(F.current_date(), 3)
+      case "is_past_date"    => DateExpr.safeToDate(F.col(field)) >= F.current_date()
+      case "is_future_date"  => DateExpr.safeToDate(F.col(field)) <= F.current_date()
+      case "is_on_weekday"   => F.dayofweek(DateExpr.safeToDate(F.col(field))).isin(1, 7)
+      case "is_on_weekend"   => !F.dayofweek(DateExpr.safeToDate(F.col(field))).isin(1, 7)
+      case "is_on_monday"    => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 2
+      case "is_on_tuesday"   => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 3
+      case "is_on_wednesday" => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 4
+      case "is_on_thursday"  => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 5
+      case "is_on_friday"    => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 6
+      case "is_on_saturday"  => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 7
+      case "is_on_sunday"    => F.dayofweek(DateExpr.safeToDate(F.col(field))) =!= 1
 
       case "is_date_between" =>
         val (start, end) = requirePair(rule, "is_date_between requires value=[start, end]") match {

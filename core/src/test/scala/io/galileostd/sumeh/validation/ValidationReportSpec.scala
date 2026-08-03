@@ -90,7 +90,7 @@ class ValidationReportSpec extends AnyWordSpec with Matchers {
       validation("fail_count") shouldBe 10L
     }
 
-    "fall back to 0 fail_count when metadata is absent" in {
+    "expose null fail_count when metadata is absent" in {
       val report = ValidationReport[Unit](
         List(ValidationResult(checkType = "is_complete", field = Left("email"), status = ValidationStatus.FAIL)),
         10,
@@ -102,7 +102,7 @@ class ValidationReportSpec extends AnyWordSpec with Matchers {
         .asInstanceOf[List[_]]
         .head
         .asInstanceOf[Map[String, Any]]
-      validation("fail_count") shouldBe 0L
+      validation("fail_count") == null shouldBe true
     }
 
     "not break the summary on unexpected metadata" in {
@@ -125,7 +125,7 @@ class ValidationReportSpec extends AnyWordSpec with Matchers {
         .asInstanceOf[List[_]]
         .head
         .asInstanceOf[Map[String, Any]]
-      validation("fail_count") shouldBe 0L
+      validation("fail_count") == null shouldBe true
     }
 
     "expose nullable fields as null" in {

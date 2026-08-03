@@ -83,6 +83,34 @@ class SparkRuleLoaderSpec extends AnyWordSpec with Matchers with BeforeAndAfterA
       val df = rulesDf(Seq(Row("email")), StructType(Seq(StructField("field", StringType))))
       an[IllegalArgumentException] should be thrownBy SparkRuleLoader.fromDataFrame(df)
     }
+
+    "reject an oversized rule source" in {
+      val rows = (1 to 10001).map(i => Row(s"col$i", "is_complete"))
+      val df = rulesDf(
+        rows,
+        StructType(
+          Seq(
+            StructField("field", StringType, nullable = true),
+            StructField("check_type", StringType, nullable = true)
+          )
+        )
+      )
+      an[IllegalArgumentException] should be thrownBy SparkRuleLoader.fromDataFrame(df)
+    }
+
+    "accept a rule source exactly at the limit" in {
+      val rows = (1 to 10000).map(i => Row(s"col$i", "is_complete"))
+      val df = rulesDf(
+        rows,
+        StructType(
+          Seq(
+            StructField("field", StringType, nullable = true),
+            StructField("check_type", StringType, nullable = true)
+          )
+        )
+      )
+      SparkRuleLoader.fromDataFrame(df) should have size 10000
+    }
   }
 
   "SparkRuleLoader.fromJsonColumn" should {
@@ -127,6 +155,12 @@ class SparkRuleLoaderSpec extends AnyWordSpec with Matchers with BeforeAndAfterA
       )
       val rules = SparkRuleLoader.fromJsonColumn(df, "config")
       rules should have size 1
+    }
+
+    "reject an oversized json column" in {
+      val rows = (1 to 10001).map(_ => Row("""{"field": "a", "check_type": "is_complete"}"""))
+      val df   = rulesDf(rows, StructType(Seq(StructField("config", StringType))))
+      an[IllegalArgumentException] should be thrownBy SparkRuleLoader.fromJsonColumn(df, "config")
     }
   }
 }

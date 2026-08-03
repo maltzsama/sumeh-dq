@@ -16,7 +16,7 @@ import io.galileostd.sumeh.validation.{ ValidationLevel, ValidationResult, Valid
  * Constraints are the only component that knows about thresholds and pass/fail semantics; analyzers stay pure. Each
  * rule family has a constraint (completeness, uniqueness, generic, aggregation, schema).
  */
-trait SparkConstraint {
+private[sumeh] trait SparkConstraint {
 
   /**
    * Checks a metric against the rule.
@@ -49,7 +49,7 @@ trait SparkConstraint {
  *
  * Passes when the measured completeness pass rate meets `rule.threshold`.
  */
-object CompletenessConstraint extends SparkConstraint {
+private[sumeh] object CompletenessConstraint extends SparkConstraint {
 
   /**
    * Compares the completeness metric against the rule's threshold.
@@ -90,7 +90,7 @@ object CompletenessConstraint extends SparkConstraint {
  *
  * Passes when the measured non-duplicate fraction meets `rule.threshold`.
  */
-object UniquenessConstraint extends SparkConstraint {
+private[sumeh] object UniquenessConstraint extends SparkConstraint {
 
   /**
    * Compares the uniqueness metric against the rule's threshold.
@@ -131,7 +131,7 @@ object UniquenessConstraint extends SparkConstraint {
  *
  * Passes when the measured pass rate meets `rule.threshold`.
  */
-object GenericConstraint extends SparkConstraint {
+private[sumeh] object GenericConstraint extends SparkConstraint {
 
   /**
    * Compares a pass-rate metric against the rule's threshold.
@@ -178,7 +178,7 @@ object GenericConstraint extends SparkConstraint {
  * A rule without a numeric `value` throws [[IllegalArgumentException]] — the caller turns that into an ERROR result, so
  * a misconfigured TABLE-level rule is reported instead of silently passing.
  */
-object AggregationConstraint extends SparkConstraint {
+private[sumeh] object AggregationConstraint extends SparkConstraint {
 
   /**
    * Compares an aggregation metric against the rule's expected value.
@@ -231,7 +231,7 @@ object AggregationConstraint extends SparkConstraint {
  *
  * Passes when the schema metric's `passed` metadata flag is `true`.
  */
-object SchemaConstraint extends SparkConstraint {
+private[sumeh] object SchemaConstraint extends SparkConstraint {
 
   /**
    * Compares the schema metric's `passed` flag.

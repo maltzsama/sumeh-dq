@@ -198,7 +198,12 @@ object RuleDefinition {
         case s: String =>
           val t = s.trim.toLowerCase
           t.isEmpty || Set("true", "1", "yes", "y", "t").contains(t)
-        case _ => true
+        case n: Number => n.doubleValue() != 0
+        case other =>
+          throw new IllegalArgumentException(
+            s"Cannot interpret '$other' (${other.getClass.getSimpleName}) as execute; " +
+              """use true/false, "true"/"false", 1/0, or yes/no"""
+          )
       }
       .getOrElse(true)
 
@@ -414,8 +419,9 @@ sealed trait RuleValue {
   def toTaggedString: String
 }
 
-/** Companion with value conversion helpers. */
+/** Companion with value conversion helpers and implicit constructors. */
 object RuleValue {
+  import scala.language.implicitConversions
 
   /**
    * Converts a [[RuleValue]] to a plain JVM value.
@@ -435,6 +441,20 @@ object RuleValue {
     case DateTimeValue(dt) => java.sql.Timestamp.valueOf(dt)
     case ListValue(items)  => items.map(toAny)
   }
+
+  implicit def fromInt(i: Int): RuleValue         = LongValue(i.toLong)
+  implicit def fromLong(l: Long): RuleValue       = LongValue(l)
+  implicit def fromDouble(d: Double): RuleValue   = DoubleValue(d)
+  implicit def fromString(s: String): RuleValue   = StringValue(s)
+  implicit def fromBoolean(b: Boolean): RuleValue = BoolValue(b)
+
+  implicit def fromList[T](xs: List[T])(
+      implicit f: T => RuleValue
+  ): RuleValue =
+    ListValue(xs.map(f))
+
+  /** Build a ListValue from mixed plain values: `RuleValue.of(18, "active")`. Each argument converts individually. */
+  def of(values: RuleValue*): RuleValue = ListValue(values.toList)
 }
 
 /**

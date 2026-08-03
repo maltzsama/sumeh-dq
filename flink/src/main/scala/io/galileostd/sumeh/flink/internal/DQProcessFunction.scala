@@ -1,8 +1,9 @@
 package io.galileostd.sumeh.flink.internal
 
+import java.time.{ LocalDate, LocalDateTime, ZoneOffset }
 import java.time.format.DateTimeFormatter
-import java.time.LocalDate
 import java.util.Locale
+import scala.util.{ Failure, Success, Try }
 
 import io.galileostd.sumeh.rule.{
   DoubleValue,
@@ -77,6 +78,27 @@ private[flink] class DQProcessFunction(
       .toMap
 
   /**
+   * Skipped-rule reasons computed once at job construction — does not depend on record data.
+   *
+   * Stored as an immutable val so every record reuses the same precomputed list instead of recomputing it on the hot
+   * path (string joins and allocations per record).
+   */
+  private val precomputedSkipped: List[String] =
+    rules.toList.flatMap {
+      rule =>
+        if (!rule.isApplicableForLevel("ROW"))
+          Some(s"${rule.checkType}:TABLE-level rules are not supported in streaming")
+        else rule.skipReason("ROW", "flink-streaming").map(r => s"${rule.checkType}:$r")
+    }
+
+  /**
+   * Rules that should actually execute — ROW-level and not engine-skipped. Filtered once at job construction instead
+   * of re-evaluating isApplicableForLevel + skipReason for every record on the hot path.
+   */
+  private val executableRules: Seq[RuleDefinition] =
+    rules.filter(r => r.isApplicableForLevel("ROW") && r.skipReason("ROW", "flink-streaming").isEmpty)
+
+  /**
    * Evaluates one record and emits the enriched row.
    *
    * The record's fields are copied by position into a widened row and augmented with `_dq_errors` (a JSON array of
@@ -95,7 +117,12 @@ private[flink] class DQProcessFunction(
 
     val values = fieldNames.indices.map(i => fieldNames(i) -> row.getField(i)).toMap
 
-    val (errors, skipped) = DQProcessFunction.evaluate(values, rules, patternCache, dateFormatCache)
+    val (errors, _) = DQProcessFunction.evaluateExecutable(
+      values,
+      executableRules,
+      patternCache,
+      dateFormatCache
+    )
 
     val enriched = new Row(fieldNames.length + 2)
     var i        = 0
@@ -104,7 +131,7 @@ private[flink] class DQProcessFunction(
       i += 1
     }
     enriched.setField(fieldNames.length, DQProcessFunction.errorsToJson(errors))
-    enriched.setField(fieldNames.length + 1, skipped.mkString("|"))
+    enriched.setField(fieldNames.length + 1, precomputedSkipped.mkString("|"))
 
     out.collect(enriched)
     if (errors.nonEmpty) ctx.output(errorTag, enriched)
@@ -143,14 +170,43 @@ final private[flink] case class DQError(
 private[flink] object DQProcessFunction {
 
   /**
-   * Pure row-level evaluation of a single record.
+   * Evaluate a single record against pre-filtered executable rules.
    *
-   * Returns a `(errors, skippedReasons)` pair. TABLE-level rules are always skipped with an explanatory reason; rules
-   * whose `skipReason` yields a reason are skipped; any exception thrown while evaluating a rule is captured as an
-   * ERROR entry.
+   * The caller has already filtered out TABLE-level and engine-skipped rules — this method evaluates every rule in
+   * the list unconditionally. Skipped reasons come from the caller's [[DQProcessFunction.precomputedSkipped]].
    *
    * @param values Field-name-to-value map of the record.
-   * @param rules Rules to evaluate.
+   * @param rules Pre-filtered rules (only ROW-level, not engine-skipped).
+   * @param patterns pre-compiled `has_pattern` regexes keyed by regex string, compiled once per operator
+   * @param formats pre-compiled `validate_date_format` formatters keyed by format string, compiled once per operator
+   * @return A tuple of structured error entries and an empty skipped list (skipped is pre-computed by the caller).
+   */
+  private[flink] def evaluateExecutable(
+      values: Map[String, Any],
+      rules: Seq[RuleDefinition],
+      patterns: Map[String, java.util.regex.Pattern],
+      formats: Map[String, DateTimeFormatter]
+  ): (List[DQError], List[String]) = {
+    val errors = scala.collection.mutable.ListBuffer[DQError]()
+
+    for (rule <- rules)
+      try
+        if (!checkRule(values, rule, patterns, formats)) errors += buildError(rule)
+      catch {
+        case e: Exception => errors += buildError(rule, Some(s"ERROR[${rule.checkType}]: ${e.getMessage}"))
+      }
+
+    (errors.toList, Nil)
+  }
+
+  /**
+   * Pure row-level evaluation of a single record, with inline skip-rule discovery.
+   *
+   * Iterates all `rules`, applying `isApplicableForLevel` and `skipReason` per rule. Use [[evaluateExecutable]] in
+   * production paths where rules are pre-filtered; this overload exists for backward compatibility with tests.
+   *
+   * @param values Field-name-to-value map of the record.
+   * @param rules Rules to evaluate (may include TABLE-level and skipped rules).
    * @param patterns pre-compiled `has_pattern` regexes keyed by regex string, compiled once per operator
    * @param formats pre-compiled `validate_date_format` formatters keyed by format string, compiled once per operator
    * @return A tuple of structured error entries and skipped-rule reasons.
@@ -327,8 +383,12 @@ private[flink] object DQProcessFunction {
 
       case "is_equal_than" =>
         val other = requireString(rule, "is_equal_than requires a column name as value")
-        Option(rawValue).map(_.toString).getOrElse("") ==
-          Option(values.getOrElse(other, null)).map(_.toString).getOrElse("")
+        val a     = rawValue
+        val b     = values.getOrElse(other, null)
+        (Try(toDouble(a)), Try(toDouble(b))) match {
+          case (Success(x), Success(y)) => x == y
+          case _ => Option(a).map(_.toString).getOrElse("") == Option(b).map(_.toString).getOrElse("")
+        }
 
       // Membership
       case "is_contained_in" =>
@@ -348,12 +408,12 @@ private[flink] object DQProcessFunction {
 
       // Date
       case "all_date_checks" => rawValue != null && safeToDate(rawValue) != null
-      case "is_today"        => toDate(rawValue) == LocalDate.now()
-      case "is_t_minus_1"    => toDate(rawValue) == LocalDate.now().minusDays(1)
-      case "is_t_minus_2"    => toDate(rawValue) == LocalDate.now().minusDays(2)
-      case "is_t_minus_3"    => toDate(rawValue) == LocalDate.now().minusDays(3)
-      case "is_past_date"    => toDate(rawValue).isBefore(LocalDate.now())
-      case "is_future_date"  => toDate(rawValue).isAfter(LocalDate.now())
+      case "is_today"        => toDate(rawValue) == today()
+      case "is_t_minus_1"    => toDate(rawValue) == today().minusDays(1)
+      case "is_t_minus_2"    => toDate(rawValue) == today().minusDays(2)
+      case "is_t_minus_3"    => toDate(rawValue) == today().minusDays(3)
+      case "is_past_date"    => toDate(rawValue).isBefore(today())
+      case "is_future_date"  => toDate(rawValue).isAfter(today())
       case "is_on_weekday" =>
         val dow = toDate(rawValue).getDayOfWeek.getValue
         dow >= 1 && dow <= 5
@@ -459,6 +519,16 @@ private[flink] object DQProcessFunction {
     )
 
   /**
+   * Current UTC date, used as the consistent reference point for all date-"now" rules (`is_today`, `is_past_date`,
+   * `is_future_date`, `is_t_minus_{1,2,3}`).
+   *
+   * Fixed to UTC — does not follow the JVM default timezone — so every TaskManager evaluates date rules identically
+   * regardless of machine configuration. On Spark, `current_date()` follows `spark.sql.session.timeZone`; set the
+   * session to UTC for cross-engine agreement.
+   */
+  private def today(): LocalDate = LocalDate.now(ZoneOffset.UTC)
+
+  /**
    * Converts a raw value to Double, throwing on incompatible types.
    *
    * @param v The raw value.
@@ -479,10 +549,16 @@ private[flink] object DQProcessFunction {
    * @throws java.lang.IllegalArgumentException if `v` is not a `LocalDate`, `java.sql.Date`, or ISO-date string
    */
   private def toDate(v: Any): LocalDate = v match {
-    case d: LocalDate     => d
-    case d: java.sql.Date => d.toLocalDate
-    case s: String        => LocalDate.parse(s)
-    case _                => throw new IllegalArgumentException(s"Cannot convert $v to LocalDate")
+    case d: LocalDate          => d
+    case d: java.sql.Date      => d.toLocalDate
+    case t: java.sql.Timestamp => t.toLocalDateTime.toLocalDate
+    case dt: LocalDateTime     => dt.toLocalDate
+    case s: String =>
+      val trimmed = s.trim
+      Try(LocalDate.parse(trimmed))
+        .orElse(Try(LocalDateTime.parse(trimmed.replace(' ', 'T')).toLocalDate))
+        .getOrElse(throw new IllegalArgumentException(s"Cannot parse '$s' as a date"))
+    case _ => throw new IllegalArgumentException(s"Cannot convert $v to LocalDate")
   }
 
   /**

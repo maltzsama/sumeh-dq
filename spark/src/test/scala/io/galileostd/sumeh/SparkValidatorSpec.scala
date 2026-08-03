@@ -8,6 +8,7 @@ import io.galileostd.sumeh.spark.SparkValidator
 import io.galileostd.sumeh.validation.ValidationStatus
 import org.apache.spark.sql.{ functions => F, Row, SparkSession }
 import org.apache.spark.sql.types._
+import org.apache.spark.SparkListenerBusTestSupport
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 import org.scalatest.BeforeAndAfterAll
@@ -1150,6 +1151,18 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       report.results.head.status shouldBe ValidationStatus.PASS
     }
 
+    "not fail an empty DataFrame for a uniqueness rule" in {
+      val empty = spark.createDataFrame(
+        spark.sparkContext.emptyRDD[Row],
+        StructType(Seq(StructField("id", IntegerType, nullable = true)))
+      )
+      val rules  = Seq(RuleDefinition.validated(Left("id"), "is_unique", threshold = 1.0))
+      val report = SparkValidator.validate(empty, rules)
+      report.totalRows shouldBe 0L
+      report.results.head.status shouldBe ValidationStatus.PASS
+      report.results.head.passRate shouldBe Some(1.0)
+    }
+
     "produce ERROR for a missing field on a numeric rule" in {
       val rules  = Seq(RuleDefinition.validated(Left("missing"), "is_greater_than"))
       val report = SparkValidator.validate(dfBasic, rules)
@@ -1200,11 +1213,13 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       try {
         val report5 = SparkValidator.validate(dfBasic, simpleRules(5))
         report5.results should have size 5
+        SparkListenerBusTestSupport.waitUntilEmpty(spark.sparkContext, 10000)
         val jobs5 = counter.jobs
 
         counter.jobs = 0
         val report20 = SparkValidator.validate(dfBasic, simpleRules(20))
         report20.results should have size 20
+        SparkListenerBusTestSupport.waitUntilEmpty(spark.sparkContext, 10000)
         val jobs20 = counter.jobs
 
         jobs5 shouldBe jobs20
@@ -1419,7 +1434,27 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       RuleRegistry.listRules().foreach {
         ct =>
           if (RuleRegistry.getRule(ct).get.engines.contains("spark"))
-            noException should be thrownBy SparkRegistry.getAnalyzer(ct)
+            noException should be thrownBy SparkRegistry.getConstraint(ct)
+      }
+    }
+
+    // Mirrors the dispatch decision in SparkValidator.validateBatch (which rules
+    // keep a dedicated analyzer): uniqueness ROW rules plus every TABLE-level
+    // rule. If a new rule is added to the constraints map and the rule registry
+    // but its analyzer entry is forgotten, this test fails at the point where
+    // the runtime would throw "has no dedicated analyzer".
+    "provide an analyzer for every rule the validator dispatches to one" in {
+      import io.galileostd.sumeh.rule.RuleRegistry
+      import io.galileostd.sumeh.spark.registry.SparkRegistry
+      val needsAnalyzer = Set("is_unique", "are_unique")
+      RuleRegistry.listRules().foreach {
+        ct =>
+          val entry     = RuleRegistry.getRule(ct).get
+          val canonical = RuleRegistry.canonical(ct)
+          if (entry.engines.contains("spark") && (entry.level == "TABLE" || needsAnalyzer(canonical)))
+            withClue(s"check type '$ct' is dispatched to getAnalyzer but has no entry: ") {
+              noException should be thrownBy SparkRegistry.getAnalyzer(ct)
+            }
       }
     }
   }
@@ -1501,6 +1536,77 @@ class SparkValidatorSpec extends AnyWordSpec with Matchers with BeforeAndAfterAl
       e.getAs[String]("actual") shouldBe result.actualValue.get.toString
       e.getAs[String]("message") shouldBe result.message.orNull
       e.getAs[String]("timestamp") shouldBe result.timestamp.toString
+    }
+  }
+
+  "RuleValue implicits" should {
+
+    "validate using plain-typed rules in batch" in {
+      // No LongValue, StringValue, or ListValue imports needed
+      val df = spark.createDataFrame(
+        spark.sparkContext.parallelize(Seq(Row.apply("alice", 25), Row.apply("bob", 42))),
+        StructType(
+          Seq(
+            StructField("name", StringType, false),
+            StructField("age", IntegerType, false)
+          )
+        )
+      )
+      val rules = Seq(
+        RuleDefinition.validated(Left("name"), "is_complete"),
+        RuleDefinition.validated(Left("age"), "is_between", value = Some(List(18, 65)))
+      )
+      val report = SparkValidator.validate(df, rules)
+      report.results should have size 2
+      report.passed should have size 2
+    }
+
+    "validate using plain-typed is_contained_in rule" in {
+      val df = spark.createDataFrame(
+        spark.sparkContext.parallelize(Seq(Row.apply("active"), Row.apply("banned"))),
+        StructType(Seq(StructField("status", StringType, false)))
+      )
+      val rules = Seq(
+        RuleDefinition.validated(Left("status"), "is_contained_in", value = Some(List("active", "pending")))
+      )
+      val report = SparkValidator.validate(df, rules)
+      report.results should have size 1
+      report.failed should have size 1
+    }
+  }
+
+  "CR-29 alias resolution" should {
+
+    "resolve every manifest alias through the registry" in {
+      val df = spark.createDataFrame(
+        spark.sparkContext.parallelize(Seq(Row.apply("a"), Row.apply("b"))),
+        StructType(Seq(StructField("x", StringType, false)))
+      )
+      // is_in → is_contained_in
+      noException should be thrownBy SparkValidator.validate(
+        df,
+        Seq(RuleDefinition.validated(Left("x"), "is_in", value = Some(List("a", "b"))))
+      )
+      // not_in → not_contained_in
+      noException should be thrownBy SparkValidator.validate(
+        df,
+        Seq(RuleDefinition.validated(Left("x"), "not_in", value = Some(List("a", "b"))))
+      )
+      // is_yesterday → is_t_minus_1
+      noException should be thrownBy SparkValidator.validate(
+        df,
+        Seq(RuleDefinition.validated(Left("x"), "is_yesterday"))
+      )
+      // is_primary_key → is_unique
+      noException should be thrownBy SparkValidator.validate(
+        df,
+        Seq(RuleDefinition.validated(Left("x"), "is_primary_key"))
+      )
+      // is_composite_key → are_unique
+      noException should be thrownBy SparkValidator.validate(
+        df,
+        Seq(RuleDefinition.validated(Left("x"), "is_composite_key"))
+      )
     }
   }
 }

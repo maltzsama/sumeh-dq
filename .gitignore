@@ -121,6 +121,7 @@ project/plugins/
 .scala_dependencies
 .ensime
 .ensime_cache/
+.metals/
 
 ### Spark ###
 checkpoint/

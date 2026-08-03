@@ -103,7 +103,11 @@ object ColumnDef {
     case s: String  => Set("true", "1", "yes", "y", "t").contains(s.trim.toLowerCase)
     case n: Number  => n.doubleValue() != 0
     case null       => false
-    case _          => false
+    case other =>
+      throw new IllegalArgumentException(
+        s"Cannot interpret '$other' (${other.getClass.getSimpleName}) as a boolean; " +
+          """use true/false, "true"/"false", 1/0, or yes/no"""
+      )
   }
 }
 
